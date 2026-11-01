@@ -1,131 +1,103 @@
 import streamlit as st
 import yfinance as yf
+import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
+from sklearn.preprocessing import MinMaxScaler
+from datetime import datetime, timedelta
 
-st.set_page_config(page_title="TAPINU - Chart Fix", layout="wide")
-
-st.markdown("## 📈 TAPINU - Chart Varum Sir - Fixed")
-
-# WORLD STOCK INPUT - Simple
-world_input = st.text_input(
-    "🌍 Stock Type Pannunga Sir - Entha Stock Venum",
-    value="BSE:SENSEX",
-    placeholder="BSE:SENSEX, NSE:RELIANCE, NASDAQ:AAPL, NSE:ZOMATO"
-)
-
-# Convert to yahoo + tradingview both
-tv_symbol = world_input.strip().upper()
-if tv_symbol == "":
-    tv_symbol = "BSE:SENSEX"
-
-# For Yahoo - Convert TradingView to Yahoo
-yahoo_map = {
-    "BSE:SENSEX": "^BSESN",
-    "NSE:NIFTY": "^NSEI",
-    "NSE:BANKNIFTY": "^NSEBANK",
-}
-if tv_symbol in yahoo_map:
-    yahoo_symbol = yahoo_map[tv_symbol]
-else:
-    # NSE:RELIANCE -> RELIANCE.NS, NASDAQ:AAPL -> AAPL
-    if ":" in tv_symbol:
-        ex, sym = tv_symbol.split(":", 1)
-        if ex in ["NSE", "BSE"]:
-            yahoo_symbol = f"{sym}.NS" if ex == "NSE" else f"{sym}.BO"
-        else:
-            yahoo_symbol = sym
-    else:
-        yahoo_symbol = tv_symbol
-
-st.write(f"Chart: {tv_symbol} | Yahoo: {yahoo_symbol}")
-
-# QUICK BUTTONS
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-if c1.button("SENSEX"): 
-    tv_symbol = "BSE:SENSEX"; yahoo_symbol = "^BSESN"
-if c2.button("NIFTY"): 
-    tv_symbol = "NSE:NIFTY"; yahoo_symbol = "^NSEI"
-if c3.button("RELIANCE"): 
-    tv_symbol = "NSE:RELIANCE"; yahoo_symbol = "RELIANCE.NS"
-if c4.button("TCS"): 
-    tv_symbol = "NSE:TCS"; yahoo_symbol = "TCS.NS"
-if c5.button("APPLE"): 
-    tv_symbol = "NASDAQ:AAPL"; yahoo_symbol = "AAPL"
-if c6.button("ZOMATO"): 
-    tv_symbol = "NSE:ZOMATO"; yahoo_symbol = "ZOMATO.NS"
-
-# METHOD 1 - TRADINGVIEW IFRAME - 100% Work Aagum
-st.markdown("### 📊 Real TradingView Chart - Iframe (Work Aagum)")
-
-tradingview_iframe = f"""
-<iframe 
-    src="https://s.tradingview.com/widgetembed/?symbol={tv_symbol}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=[]&theme=Light&style=1&timezone=Asia%2FKolkata&withdateranges=1&studies_overrides={{}}&overrides={{}}&enabled_features=[]&disabled_features=[]&locale=en&utm_source=&utm_medium=widget&utm_campaign=chart&utm_term={tv_symbol}"
-    style="width: 100%; height: 650px; border: 1px solid #e0e3eb; border-radius:8px;"
-    frameborder="0"
-    scrolling="no"
-    allowtransparency="true"
-></iframe>
-"""
-
-st.components.v1.html(tradingview_iframe, height=670)
-
-st.markdown("---")
-st.markdown("### 📈 Backup Chart - Yahoo Real Candle (Kandippa Varum Sir)")
-
-# METHOD 2 - BACKUP YAHOO CANDLE - 100% Varum - Nonsense Illa
+# Try import tensorflow - if not available use simple logic
 try:
-    @st.cache_data(ttl=60)
-    def load_yahoo(sym):
-        return yf.Ticker(sym).history(period="1y", interval="1d")
-    
-    df = load_yahoo(yahoo_symbol)
-    
-    if not df.empty:
-        last = float(df["Close"].iloc[-1])
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import LSTM, Dense
+    TF_AVAILABLE = True
+except:
+    TF_AVAILABLE = False
+
+st.set_page_config(page_title="TAPINU - AI Prediction", layout="wide")
+st.markdown("## 🤖 TAPINU - GitHub Stock Prediction - AI Model")
+
+# GITHUB REPO LOGIC - LSTM PREDICTION
+# Source: github.com/adititanna/stock-market-intraday-predictor
+# Source: github.com/TauricResearch/TradingAgents logic
+
+st.markdown("**GitHub Top Repos Logic: LSTM + Technical Analysis + BUY/SELL**")
+
+# Stock Input - World Any Stock
+stock_input = st.text_input("🌍 Stock Symbol Type Pannunga Sir (GitHub style)", value="RELIANCE.NS", placeholder="RELIANCE.NS, TCS.NS, AAPL, ZOMATO.NS, ^BSESN")
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    if st.button("RELIANCE 🇮🇳"): stock_input = "RELIANCE.NS"
+with col2:
+    if st.button("TCS 🇮🇳"): stock_input = "TCS.NS"
+with col3:
+    if st.button("SENSEX"): stock_input = "^BSESN"
+with col4:
+    if st.button("AAPL 🇺🇸"): stock_input = "AAPL"
+
+symbol = stock_input.strip().upper()
+if not symbol:
+    symbol = "RELIANCE.NS"
+
+st.write(f"**Predicting: {symbol}**")
+
+# Fetch Data - GitHub method
+@st.cache_data(ttl=300)
+def get_data(sym):
+    return yf.Ticker(sym).history(period="1y", interval="1d")
+
+df = get_data(symbol)
+
+if df.empty:
+    st.error("Data varala Sir - Symbol check pannunga Sir")
+    st.stop()
+
+# Technical Indicators - GitHub: trading-signals repo
+df["MA20"] = df["Close"].rolling(20).mean()
+df["MA50"] = df["Close"].rolling(50).mean()
+df["RSI"] = 100 - (100 / (1 + df["Close"].pct_change().rolling(14).mean()))
+df["Upper"] = df["MA20"] + 2*df["Close"].rolling(20).std()
+df["Lower"] = df["MA20"] - 2*df["Close"].rolling(20).std()
+
+# LSTM Prediction Logic - From GitHub intraday-predictor
+@st.cache_data(ttl=300)
+def lstm_predict(data_close):
+    try:
+        scaler = MinMaxScaler()
+        scaled = scaler.fit_transform(data_close.values.reshape(-1,1))
         
-        fig = go.Figure()
-        fig.add_trace(go.Candlestick(
-            x=df.index,
-            open=df["Open"],
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
-            increasing_line_color="#26a69a",
-            increasing_fillcolor="#26a69a",
-            decreasing_line_color="#ef5350",
-            decreasing_fillcolor="#ef5350",
-            name="Candle"
-        ))
+        # Prepare 60 days sequence
+        seq_len = 60
+        X = []
+        for i in range(seq_len, len(scaled)):
+            X.append(scaled[i-seq_len:i])
+        X = np.array(X)
         
-        fig.update_layout(
-            height=600,
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            xaxis=dict(showgrid=True, gridcolor="#f0f3fa", rangeslider_visible=False, type="date"),
-            yaxis=dict(showgrid=True, gridcolor="#f0f3fa", side="right"),
-            margin=dict(l=10, r=80, t=10, b=20),
-            showlegend=False,
-            title=f"{tv_symbol} - {yahoo_symbol} - Last: {round(last,2)} - TradingView Maathiri"
-        )
-        
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-        st.success(f"✅ Backup Chart Varuthu Sir! {tv_symbol} - {round(last,2)}")
-    else:
-        st.warning(f"{yahoo_symbol} data varala Sir - TradingView iframe mela irukku paarkalam Sir")
-        
-except Exception as e:
-    st.error(f"Yahoo error: {e} - Aana TradingView iframe mela irukku Sir")
-
-st.info("""
-**Enna Fix Pannen Sir:**
-
-✅ Munadi tv.js script use pannen Sir - Athu Streamlit la block aayiduthu Sir - Chart varala
-
-✅ Ippo iframe method Sir - https://s.tradingview.com/widgetembed/ - Ithu 100% work aagum Sir - Ella browser la varum Sir
-
-✅ Backup Yahoo Candle Sir - TradingView varalana kooda Yahoo candle kandippa varum Sir - 2 chart potten Sir
-
-✅ World Stocks: BSE:SENSEX, NSE:RELIANCE, NASDAQ:AAPL, NSE:ZOMATO, NSE:PAYTM - Ella stock type pannalam Sir - tv_symbol ah maathi iframe auto maarum Sir
-""")
-
-st.caption("Fixed - Iframe TradingView + Backup Yahoo Candle - 100% Chart Varum Sir")
+        if TF_AVAILABLE and len(X) > 0:
+            # Simple LSTM Model - GitHub Code
+            model = Sequential([
+                LSTM(50, return_sequences=True, input_shape=(seq_len,1)),
+                LSTM(50),
+                Dense(1)
+            ])
+            model.compile(optimizer='adam', loss='mse')
+            # Train quickly - 3 epochs for demo (GitHub repo uses more)
+            model.fit(X, scaled[seq_len:], epochs=3, batch_size=32, verbose=0)
+            
+            # Predict next 7 days
+            last_seq = scaled[-seq_len:]
+            preds = []
+            curr = last_seq.copy()
+            for _ in range(7):
+                p = model.predict(curr.reshape(1, seq_len, 1), verbose=0)[0][0]
+                preds.append(p)
+                curr = np.append(curr[1:], [[p]], axis=0)
+            
+            preds = scaler.inverse_transform(np.array(preds).reshape(-1,1)).flatten()
+            return preds
+        else:
+            # Fallback simple trend prediction if TF not available
+            last_price = data_close.iloc[-1]
+            trend = (data_close.iloc[-1] - data_close.iloc[-20]) / 20
+            return 
