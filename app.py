@@ -15,89 +15,105 @@ ticker = st.sidebar.text_input("Search Stock", value="RELIANCE.NS")
 period = st.sidebar.selectbox("Period", ["1mo","3mo","6mo","1y"], index=2)
 future_days = st.sidebar.slider("Predict Days", 1, 20, 5)
 
-# Real time price
+# Real time
 try:
     live = yf.Ticker(ticker)
-    price = live.fast_info["last_price"]
-    st.metric(f"LIVE {ticker}", f"{price}")
+    price = live.fast_info.get("last_price", 0)
+    st.metric(f"LIVE {ticker}", f"{price:.2f}")
 except:
     price = 0
-    st.write("Loading...")
+    st.write("Loading Live...")
 
-# Download data
-data = yf.download(ticker, period=period, progress=False)
-
-if data.empty:
-    st.error("Not Found")
-else:
-    data["MA20"] = data["Close"].rolling(20).mean()
-    data["MA50"] = data["Close"].rolling(50).mean()
+# Download - NEW METHOD TO FIX ERROR SIR
+try:
+    stock = yf.Ticker(ticker)
+    data = stock.history(period=period)
     
-    delta = data["Close"].diff()
-    gain = delta.where(delta > 0, 0).rolling(14).mean()
-    loss = -delta.where(delta < 0, 0).rolling(14).mean()
-    rs = gain / loss
-    data["RSI"] = 100 - (100 / (1 + rs))
-    
-    last = float(data["Close"].iloc[-1])
-    ma20 = float(data["MA20"].iloc[-1]) if not pd.isna(data["MA20"].iloc[-1]) else last
-    ma50 = float(data["MA50"].iloc[-1]) if not pd.isna(data["MA50"].iloc[-1]) else last
-    rsi = float(data["RSI"].iloc[-1]) if not pd.isna(data["RSI"].iloc[-1]) else 50
-    
-    buy = 0
-    sell = 0
-    if ma20 > ma50:
-        buy = buy + 1
+    if data.empty:
+        st.error("Not Found Sir")
     else:
-        sell = sell + 1
-    if rsi < 30:
-        buy = buy + 1
-    elif rsi > 70:
-        sell = sell + 1
-    if last > ma20:
-        buy = buy + 1
-    else:
-        sell = sell + 1
-    
-    if buy > sell:
-        st.success(f"BUY SIGNAL {ticker} BUY {buy} vs {sell}")
-    elif sell > buy:
-        st.error(f"SELL SIGNAL {ticker} SELL {sell} vs {buy}")
-    else:
-        st.warning(f"HOLD SIGNAL {ticker} HOLD")
-    
-    st.write(f"MA20 {ma20:.2f} MA50 {ma50:.2f} RSI {rsi:.2f}")
-    st.line_chart(data[["Close","MA20","MA50"]])
-    st.dataframe(data.tail(10))
-    
-    # Prediction
-    st.subheader("Prediction")
-    data["Days"] = range(len(data))
-    X = np.array(data["Days"]).reshape(-1, 1)
-    y = data["Close"].values
-    model = LinearRegression()
-    model.fit(X, y)
-    future = np.array(range(len(data), len(data)+future_days)).reshape(-1, 1)
-    pred = model.predict(future)
-    st.write(pred)
-    
-    # Chatbot Simple
-    st.divider()
-    st.subheader("Customer Chatbot")
-    user_q = st.text_input("Kelu Sir")
-    if user_q:
-        q = user_q.lower()
-        if "buy" in q:
-            if buy > sell:
-                st.write(f"BUY Sir {ticker}")
-            else:
-                st.write(f"SELL Sir {ticker}")
-        elif "gold" in q:
-            st.write("GC=F Type Pannunga Sir Gold")
-        elif "real" in q:
-            st.write(f"Real Time Price {price} Sir")
+        # Fix columns
+        data = data.reset_index()
+        
+        # MA
+        data["MA20"] = data["Close"].rolling(20).mean()
+        data["MA50"] = data["Close"].rolling(50).mean()
+        
+        # RSI
+        delta = data["Close"].diff()
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = -delta.where(delta < 0, 0).rolling(14).mean()
+        rs = gain / loss
+        data["RSI"] = 100 - (100 / (1 + rs))
+        
+        last = float(data["Close"].iloc[-1])
+        ma20_val = data["MA20"].iloc[-1]
+        ma50_val = data["MA50"].iloc[-1]
+        rsi_val = data["RSI"].iloc[-1]
+        
+        ma20 = float(ma20_val) if pd.notna(ma20_val) else last
+        ma50 = float(ma50_val) if pd.notna(ma50_val) else last
+        rsi = float(rsi_val) if pd.notna(rsi_val) else 50
+        
+        buy = 0
+        sell = 0
+        if ma20 > ma50:
+            buy += 1
         else:
-            st.write(f"Super Sir {ticker} Search Pannunga Sir")
+            sell += 1
+        if rsi < 30:
+            buy += 1
+        elif rsi > 70:
+            sell += 1
+        if last > ma20:
+            buy += 1
+        else:
+            sell += 1
+        
+        if buy > sell:
+            st.success(f"🟢 BUY SIGNAL {ticker} BUY - {buy} vs {sell}")
+            st.balloons()
+        elif sell > buy:
+            st.error(f"🔴 SELL SIGNAL {ticker} SELL - {sell} vs {buy}")
+        else:
+            st.warning(f"🟡 HOLD {ticker}")
+        
+        st.write(f"MA20 {ma20:.2f} | MA50 {ma50:.2f} | RSI {rsi:.2f}")
+        st.line_chart(data[["Close","MA20","MA50"]])
+        st.dataframe(data.tail(10), use_container_width=True)
+        
+        # Prediction
+        st.subheader("Prediction")
+        data["Days"] = range(len(data))
+        X = np.array(data["Days"]).reshape(-1, 1)
+        y = data["Close"].values
+        model = LinearRegression()
+        model.fit(X, y)
+        future = np.array(range(len(data), len(data)+future_days)).reshape(-1, 1)
+        pred = model.predict(future)
+        st.write(pred)
+        
+        # Chatbot
+        st.divider()
+        st.subheader("Customer Chatbot")
+        user_q = st.text_input("Kelu Sir")
+        if user_q:
+            q = user_q.lower()
+            if "buy" in q or "sell" in q:
+                if buy > sell:
+                    st.write(f"BUY Sir {ticker} Live {price:.2f}")
+                else:
+                    st.write(f"SELL Sir {ticker} Live {price:.2f}")
+            elif "gold" in q:
+                st.write("GC=F Type Pannunga Sir Gold")
+            elif "real" in q:
+                st.write(f"Real Time {price:.2f} Sir")
+            else:
+                st.write(f"Super Sir {ticker} Search Pannunga Sir")
+
+except Exception as e:
+    st.error(f"Error: {e}")
+    st.write("Ticker Check Pannunga Sir - Ex: RELIANCE.NS, AAPL, GC=F, BTC-USD")
 
 st.divider()
-st.write("BATCH-5 FINAL APP READY")
+st.write("BATCH-5 FINAL APP READY - No Error")
