@@ -5,65 +5,35 @@ import numpy as np
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
 
-# PRO CSS
-st.set_page_config(page_title="TAPINU PRO - Trading Terminal", layout="wide", page_icon="💹")
-st.markdown("""
-<style>
-    .main { background-color: #0e1117; }
-    .metric-card { background: linear-gradient(135deg, #1f2937 0%, #111827 100%); padding:20px; border-radius:15px; border:1px solid #374151; }
-    .buy-box { background: linear-gradient(135deg, #065f46 0%, #022c22 100%); padding:20px; border-radius:12px; border-left:5px solid #10b981; }
-    .sell-box { background: linear-gradient(135deg, #7f1d1d 0%, #450a0a 100%); padding:20px; border-radius:12px; border-left:5px solid #ef4444; }
-    h1 { font-weight:800; letter-spacing:-1px; }
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(page_title="TAPINU PRO", layout="wide")
+st.title("TAPINU PRO TERMINAL")
+st.caption("BATCH-5 Professional")
+st.divider()
 
-# HEADER
-colh1, colh2 = st.columns([3,1])
-with colh1:
-    st.markdown("# 💹 TAPINU PRO TERMINAL")
-    st.caption("BATCH-5 | Real-Time Market Intelligence | Institutional Grade")
-with colh2:
-    st.markdown("### 🟢 LIVE MARKET")
+st.sidebar.title("MARKET CONTROL")
+ticker = st.sidebar.text_input("Search Stock", value="RELIANCE.NS")
+period = st.sidebar.selectbox("Period", ["1mo","3mo","6mo","1y"], index=2)
+days = st.sidebar.slider("Forecast", 1, 20, 7)
 
-# SIDEBAR PRO
-st.sidebar.markdown("## ⚙️ MARKET CONTROL")
-ticker = st.sidebar.text_input("🔍 Search Global Asset", value="RELIANCE.NS", help="Ex: RELIANCE.NS, TCS.NS, AAPL, TSLA, BTC-USD, GC=F, NIFTY")
-period_map = {"1 Month":"1mo","3 Months":"3mo","6 Months":"6mo","1 Year":"1y","2 Years":"2y","5 Years":"5y"}
-period_label = st.sidebar.selectbox("📅 Timeframe", list(period_map.keys()), index=2)
-period = period_map[period_label]
-future_days = st.sidebar.slider("🔮 AI Forecast Days", 1, 30, 7)
-
-st.sidebar.divider()
-st.sidebar.markdown("### 💡 Quick Search")
-st.sidebar.code("RELIANCE.NS | TCS.NS\nINFY.NS | HDFCBANK.NS\nAAPL | TSLA | BTC-USD\nGC=F Gold | NIFTY")
-
-# DATA FETCH PRO
 @st.cache_data(ttl=60)
-def get_data(ticker, period):
-    stock = yf.Ticker(ticker)
-    hist = stock.history(period=period)
-    info = stock.info
-    return hist, info
+def get_data(t, p):
+    s = yf.Ticker(t)
+    h = s.history(period=p)
+    return h
 
 try:
-    with st.spinner(f"Fetching {ticker} ..."):
-        data, info = get_data(ticker, period)
-
+    data = get_data(ticker, period)
     if data.empty:
-        st.error(f"❌ {ticker} Not Found. Check Symbol Sir!")
+        st.error("Not Found")
         st.stop()
-
-    # Metrics
+    
     last = float(data["Close"].iloc[-1])
     prev = float(data["Close"].iloc[-2])
-    change = last - prev
-    pct = (change/prev)*100
+    ch = last - prev
+    pct = (ch/prev)*100
     
-    # Indicators
     data["MA20"] = data["Close"].rolling(20).mean()
     data["MA50"] = data["Close"].rolling(50).mean()
-    data["MA200"] = data["Close"].rolling(200).mean()
-    
     delta = data["Close"].diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = -delta.where(delta < 0, 0).rolling(14).mean()
@@ -73,26 +43,41 @@ try:
     ma20 = data["MA20"].iloc[-1]
     ma50 = data["MA50"].iloc[-1]
     rsi = data["RSI"].iloc[-1]
-    volume = data["Volume"].iloc[-1]
     
-    # BUY SELL LOGIC PRO
-    score = 0
-    reasons = []
-    if last > ma20: 
-        score+=1; reasons.append("Price > MA20 (Bullish)")
-    else: 
-        score-=1; reasons.append("Price < MA20 (Bearish)")
-    if ma20 > ma50: 
-        score+=1; reasons.append("MA20 > MA50 Golden Cross")
-    else: 
-        score-=1; reasons.append("MA20 < MA50 Death Cross")
-    if rsi < 30: 
-        score+=1; reasons.append(f"RSI {rsi:.1f} Oversold - Buy Zone")
-    elif rsi > 70: 
-        score-=1; reasons.append(f"RSI {rsi:.1f} Overbought - Sell Zone")
-    else: 
-        reasons.append(f"RSI {rsi:.1f} Neutral")
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("LIVE PRICE", round(last,2), str(round(pct,2))+"%")
+    c2.metric("MA20", round(ma20,2))
+    c3.metric("MA50", round(ma50,2))
+    c4.metric("RSI", round(rsi,2))
+    
+    if last > ma20 and ma20 > ma50:
+        st.success("BUY SIGNAL - " + ticker + " STRONG BUY")
+        st.balloons()
+    elif last < ma20:
+        st.error("SELL SIGNAL - " + ticker + " SELL")
+    else:
+        st.warning("HOLD - " + ticker)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=data.index, open=data["Open"], high=data["High"], low=data["Low"], close=data["Close"]))
+    fig.add_trace(go.Scatter(x=data.index, y=data["MA20"], line=dict(color="blue"), name="MA20"))
+    fig.add_trace(go.Scatter(x=data.index, y=data["MA50"], line=dict(color="red"), name="MA50"))
+    fig.update_layout(height=500, template="plotly_dark", xaxis_rangeslider_visible=False)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    st.subheader("AI Prediction")
+    dr = data.reset_index()
+    dr["D"] = range(len(dr))
+    X = np.array(dr["D"]).reshape(-1,1)
+    y = dr["Close"].values
+    m = LinearRegression()
+    m.fit(X,y)
+    fut = np.array(range(len(dr), len(dr)+days)).reshape(-1,1)
+    pr = m.predict(fut)
+    st.write(pr)
 
-    # TOP METRICS
-    m1,m2,m3,m4 = st.columns(4)
-    m1.metric(f"{ticker} LIVE", f"
+except Exception as e:
+    st.write("Error:")
+    st.write(e)
+
+st.write("TAPINU PRO READY")
