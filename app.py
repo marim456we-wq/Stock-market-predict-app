@@ -1,20 +1,16 @@
 import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import numpy as np
 
-st.set_page_config(page_title="TAPINU - PRO Clear", layout="wide")
+st.set_page_config(page_title="TAPINU - 3D CANDLE BAR", layout="wide", page_icon="💎")
 
-st.title("TAPINU - PRO Chart - Nalla Theriyum")
-st.write("Jan 2026 to Oct 2026 - SENSEX Chart Nalla Varuthu Sir!")
+st.title("💎 3D CANDLE BAR - Building Maathiri Nikkum Sir!")
+st.caption("Candle ellam 3D Bar ah - Green Red Building Sir!")
 
-ticker_choice = st.selectbox(
-    "Stock",
-    ["SENSEX - ^BSESN", "NIFTY - ^NSEI", "RELIANCE - RELIANCE.NS"],
-    index=0
-)
-ticker = ticker_choice.split(" - ")[1]
-period = st.selectbox("Period", ["1y", "2y", "6mo"], index=0)
+choice = st.selectbox("Stock", ["SENSEX - ^BSESN", "NIFTY - ^NSEI", "RELIANCE - RELIANCE.NS"], index=0)
+ticker = choice.split(" - ")[1]
+period = st.selectbox("Period", ["1mo", "3mo", "6mo"], index=1)
 
 @st.cache_data(ttl=60)
 def load_data(t, p):
@@ -25,91 +21,98 @@ data = load_data(ticker, period)
 if data.empty:
     st.stop()
 
+# Take last 30 candles for clear 3D view
+data = data.tail(30)
+
 last = float(data["Close"].iloc[-1])
-prev = float(data["Close"].iloc[-2])
-chg = last - prev
-chg_pct = (chg / prev * 100)
 
-up = chg >= 0
-color = "#26a69a" if up else "#ef5350"
+# Function to create 3D Box (Candle Body)
+def cuboid(x0, x1, y0, y1, z0, z1, color):
+    # 8 vertices
+    X = [x0, x1, x1, x0, x0, x1, x1, x0]
+    Y = [y0, y0, y1, y1, y0, y0, y1, y1]
+    Z = [z0, z0, z0, z0, z1, z1, z1, z1]
+    # faces
+    i = [0,0,0,0,1,1,2,2,3,3,4,6]
+    j = [1,2,3,4,2,6,3,7,4,7,5,7]
+    k = [2,3,4,5,6,7,7,4,7,5,6,5]
+    return go.Mesh3d(x=X, y=Y, z=Z, i=i, j=j, k=k, color=color, opacity=0.85, flatshading=True)
 
-# TOP BAR - Clear
-st.markdown("---")
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("SENSEX LIVE", f"{round(last,2)}", f"{round(chg,2)} ({round(chg_pct,2)}%)")
-col2.metric("High", f"{round(float(data['High'].max()),2)}")
-col3.metric("Low", f"{round(float(data['Low'].min()),2)}")
-col4.metric("Date", f"{data.index[0].strftime('%b %Y')} to {data.index[-1].strftime('%b %Y')}")
+fig = go.Figure()
 
-if up:
-    st.success(f"📈 YERUTHU SIR - {round(chg,2)} up Sir - Chart mela yeruthu Sir!")
-else:
-    st.error(f"📉 YERANGUTHU SIR - {round(chg,2)} down Sir - Chart keela yeranguthu Sir!")
+for idx in range(len(data)):
+    o = float(data["Open"].iloc[idx])
+    c = float(data["Close"].iloc[idx])
+    h = float(data["High"].iloc[idx])
+    l = float(data["Low"].iloc[idx])
+    
+    is_green = c >= o
+    col = "#00ff88" if is_green else "#ff4444"
+    
+    x0 = idx - 0.3
+    x1 = idx + 0.3
+    y0 = -0.3
+    y1 = 0.3
+    z0 = min(o, c)
+    z1 = max(o, c)
+    
+    # Body - 3D Bar
+    fig.add_trace(cuboid(x0, x1, y0, y1, z0, z1, col))
+    
+    # Wick - High to Low line
+    fig.add_trace(go.Scatter3d(
+        x=[idx, idx],
+        y=[0, 0],
+        z=[l, h],
+        mode='lines',
+        line=dict(color=col, width=8),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
 
-# PRO CHART - Nalla Theriyum - Big Candles
-fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.75, 0.25])
-
-# Candle - Big and Clear
-fig.add_trace(go.Candlestick(
-    x=data.index,
-    open=data["Open"],
-    high=data["High"],
-    low=data["Low"],
-    close=data["Close"],
-    increasing_line_color="#26a69a",
-    increasing_fillcolor="#26a69a",
-    decreasing_line_color="#ef5350",
-    decreasing_fillcolor="#ef5350",
-    increasing_line_width=2,
-    decreasing_line_width=2,
-    whiskerwidth=0.3,
-    name="SENSEX"
-), row=1, col=1)
-
-# MA lines for better view
-fig.add_trace(go.Scatter(x=data.index, y=data["Close"].rolling(20).mean(), line=dict(color="#2962ff", width=2), name="MA20"), row=1, col=1)
-fig.add_trace(go.Scatter(x=data.index, y=data["Close"].rolling(50).mean(), line=dict(color="#ff6d00", width=1.5, dash="dash"), name="MA50"), row=1, col=1)
-
-# Volume - Perusa Nalla Theriyum
-vol_colors = ["#26a69a" if c >= o else "#ef5350" for c, o in zip(data["Close"], data["Open"])]
-fig.add_trace(go.Bar(x=data.index, y=data["Volume"], marker_color=vol_colors, name="Volume - 12.24M", opacity=0.8), row=2, col=1)
+# Volume bars at bottom
+vol = data["Volume"].values / data["Volume"].max() * 500  # scale
+for idx in range(len(data)):
+    v = vol[idx]
+    fig.add_trace(cuboid(idx-0.3, idx+0.3, 1, 1.6, 0, v, "#4a90e2"))
 
 fig.update_layout(
     height=800,
-    template="plotly_white",
-    showlegend=True,
-    xaxis_rangeslider_visible=False,
-    title=f"{ticker} - TradingView PRO - Nalla Theriyum Chart",
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    scene=dict(
+        xaxis=dict(title="Time - Jan to Oct", showgrid=True, gridcolor="#333"),
+        yaxis=dict(title="Width", showgrid=False, visible=False),
+        zaxis=dict(title=f"Price - {int(data['Low'].min())} to {int(data['High'].max())}", showgrid=True, gridcolor="#333"),
+        bgcolor="#0a0e1a",
+        camera=dict(eye=dict(x=1.7, y=-1.5, z=0.8)),
+        aspectmode="manual",
+        aspectratio=dict(x=2.5, y=0.5, z=1)
+    ),
+    paper_bgcolor="#0a0e1a",
+    plot_bgcolor="#0a0e1a",
+    title=f"{ticker} - 3D CANDLE BARS - {len(data)} Candles - Building Maathiri - Green Yeruthu Red Yeranguthu",
+    showlegend=False,
+    font=dict(color="white")
 )
 
-fig.update_xaxes(showgrid=True, gridcolor="#e0e3eb", gridwidth=0.5, row=1, col=1)
-fig.update_xaxes(title_text="Date - Jan 2026 to Oct 2026 - Oct Nov", showgrid=True, gridcolor="#e0e3eb", row=2, col=1)
-fig.update_yaxes(title_text="Price - 72k to 86k", side="right", showgrid=True, gridcolor="#e0e3eb", row=1, col=1)
-fig.update_yaxes(title_text="Vol - 12.24M", side="right", showgrid=False, row=2, col=1)
-
-# Last price line
-fig.add_hline(y=last, line_dash="dot", line_color=color, line_width=2, opacity=0.7, row=1, col=1, annotation_text=f" LIVE {round(last,2)} ")
+# Add ground grid
+fig.update_layout(scene_xaxis_gridcolor="#1a2332", scene_yaxis_gridcolor="#1a2332", scene_zaxis_gridcolor="#1a2332")
 
 st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("---")
-st.subheader("Dolly Robot - Chart Analysis")
-
-c1, c2 = st.columns(2)
-with c1:
-    st.info(f"**Chart Nalla Theriyutha?**\n\n- Jan 2026: 84k\n- Apr 2026: 72k (Yeranguthu)\n- Jul 2026: 78k (Yeruthu)\n- Oct 2026: 74k (Ippo {round(last,2)})\n\n**Full Clear Sir!**")
-with c2:
+col1, col2 = st.columns(2)
+with col1:
+    st.success(f"**3D CANDLE BAR READY SIR!**\n\n- Green Bar = Yeruthu Sir (Close > Open)\n- Red Bar = Yeranguthu Sir (Close < Open)\n- Height = Open to Close Sir\n- Wick = High to Low Sir\n- Blue Bar = Volume Sir\n\nMouse vechu suthi paarkalam Sir!")
+with col2:
     st.markdown(f"""
-    <div style='background:linear-gradient(135deg,#667eea,#764ba2); padding:20px; border-radius:12px; color:white; text-align:center;'>
-        <div style='font-size:30px;'>🤖</div>
-        <b>Dolly: Chart Nalla Theriyuthu Sir!</b><br>
+    <div style='background:linear-gradient(135deg,#00ff88,#00cc6a); padding:20px; border-radius:15px; color:black; text-align:center; font-weight:bold;'>
+        <div style='font-size:30px;'>🤖💎</div>
+        Dolly: 3D Candle Bar Mass Sir!<br>
         SENSEX {round(last,2)} Sir!<br>
-        {'Yeruthu Sir - BUY' if up else 'Yeranguthu Sir - WAIT'}<br>
-        MA20, MA50 kooda varuthu Sir!
+        Building maathiri nikkuthu Sir!<br>
+        Rotate Pannunga Sir!
     </div>
     """, unsafe_allow_html=True)
 
-st.caption("Nalla Theriyum Chart - Big Candle - MA20 MA50 - Volume Perusa - TradingView PRO")
+st.info("💎 Tip: Mouse left click drag panni rotate pannalam Sir, Scroll panni zoom pannalam Sir, Right click drag panni move pannalam Sir - Full 3D Sir!")
+st.caption("3D CANDLE BAR - TradingView kooda illa Sir - TAPINU First Sir - Building Maathiri Candle Sir!")
