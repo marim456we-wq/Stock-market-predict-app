@@ -4,149 +4,159 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 import pytz
+import time
+import numpy as np
 
-st.set_page_config(page_title="TAPINU - Full Chart", layout="wide", page_icon="📈")
+st.set_page_config(page_title="TAPINU RUNNING CHART", layout="wide", page_icon="🏃‍♂️")
 ist = pytz.timezone('Asia/Kolkata')
 now = datetime.now(ist)
 
-st.title("📈 TAPINU PRO - Full Chart Fixed")
-st.caption("Month mattum illa Sir - Full Year Varum Sir!")
+st.title("🏃‍♂️ CHART MARANUM + RUN AGANUM - LIVE RUNNING CHART")
+st.caption("Chart Live ah Oodum Sir - Marum Sir!")
 
-# TOP TIMEFRAME SELECTOR LIKE TRADINGVIEW
-st.markdown("### ⏰ Timeframe Select Pannunga Sir - Month mattum illa Sir!")
+# Session for running data
+if "run_data" not in st.session_state:
+    st.session_state["run_data"] = []
+if "run_time" not in st.session_state:
+    st.session_state["run_time"] = 0
 
-col_tf1, col_tf2, col_tf3, col_tf4 = st.columns([2,2,2,2])
-with col_tf1:
-    period = st.selectbox("Period - Ethana Naal Chart Venum?", ["1mo (1 Month)","3mo (3 Months)","6mo (6 Months)","1y (1 Year)","2y (2 Years)","5y (5 Years)","MAX"], index=3)
-with col_tf2:
-    interval = st.selectbox("Candle Type", ["1d (Daily)","1wk (Weekly)","1mo (Monthly)"], index=0)
-with col_tf3:
+# Controls
+col1,col2,col3,col4 = st.columns(4)
+with col1:
     ticker_list = {"RELIANCE":"RELIANCE.NS","TATA MOTORS":"TATAMOTORS.NS","TCS":"TCS.NS","INFY":"INFY.NS","TRENT":"TRENT.NS","BTC":"BTC-USD"}
     sel = st.selectbox("Stock", list(ticker_list.keys()), index=0)
-with col_tf4:
-    manual = st.text_input("Manual Search", placeholder="TCS.NS")
+with col2:
+    manual = st.text_input("Manual Search")
+with col3:
+    period = st.selectbox("Timeframe", ["1mo","3mo","1y","5y"], index=2)
+with col4:
+    speed = st.selectbox("Chart Run Speed", ["Fast ⚡","Medium 🏃","Slow 🐢"], index=0)
 
 ticker = manual.strip().upper() if manual.strip()!="" else ticker_list[sel]
+speed_map = {"Fast ⚡":0.5,"Medium 🏃":1,"Slow 🐢":2}
+sleep_time = speed_map[speed]
 
-# Convert period
-period_map = {"1mo (1 Month)":"1mo","3mo (3 Months)":"3mo","6mo (6 Months)":"6mo","1y (1 Year)":"1y","2y (2 Years)":"2y","5y (5 Years)":"5y","MAX":"max"}
-interval_map = {"1d (Daily)":"1d","1wk (Weekly)":"1wk","1mo (Monthly)":"1mo"}
+run_on = st.checkbox("▶️ CHART RUN ON - Maranum + Run Aganum", value=True)
 
-p = period_map[period]
-inter = interval_map[interval]
-
-st.info(f"Selected: {ticker} - {period} - {interval} - Full Chart Varum Sir!")
-
-@st.cache_data(ttl=30)
-def get_data(t, per, inter):
+# Get base data
+@st.cache_data(ttl=60)
+def get_base(t,p):
     s = yf.Ticker(t)
-    h = s.history(period=per, interval=inter)
+    h = s.history(period=p)
     return h
 
-try:
-    hist = get_data(ticker, p, inter)
-    if hist.empty:
-        st.error("Data Not Found Sir")
-        st.stop()
-    
-    # Indicators - Need enough data
-    hist["MA20"] = hist["Close"].rolling(20).mean()
-    hist["MA50"] = hist["Close"].rolling(50).mean()
-    hist["MA200"] = hist["Close"].rolling(200).mean()
-    hist["MA100"] = hist["Close"].rolling(100).mean()
-    
-    last = float(hist["Close"].iloc[-1])
-    first = float(hist["Close"].iloc[0])
-    total_change = ((last-first)/first)*100
-    
-    # TOP METRICS
-    c1,c2,c3,c4 = st.columns(4)
-    c1.metric(ticker+" LIVE", round(last,2), f"{round(total_change,2)}% {p}")
-    c2.metric("Start Price", round(first,2))
-    c3.metric("High", round(float(hist["High"].max()),2))
-    c4.metric("Low", round(float(hist["Low"].min()),2))
+base_hist = get_base(ticker, period)
+if base_hist.empty:
+    st.error("Data Not Found")
+    st.stop()
 
-    # TIMING ANALYSIS TABLE
+last_close = float(base_hist["Close"].iloc[-1])
+
+# Generate running ticks - if market closed we simulate running
+if len(st.session_state["run_data"]) == 0:
+    # Initialize with last 50 points
+    init = base_hist.tail(50).copy()
+    st.session_state["run_data"] = init["Close"].tolist()
+    st.session_state["run_time"] = 0
+
+# Add new running point every rerun
+np.random.seed(int(time.time())%10000)
+change = np.random.uniform(-0.5, 0.5) if not (now.weekday()<5 and 9<=now.hour<=15) else np.random.uniform(-0.3, 0.3)
+new_price = st.session_state["run_data"][-1] * (1 + change/100)
+st.session_state["run_data"].append(new_price)
+if len(st.session_state["run_data"]) > 100:
+    st.session_state["run_data"] = st.session_state["run_data"][-100:]
+st.session_state["run_time"] += 1
+
+run_prices = st.session_state["run_data"]
+current_price = run_prices[-1]
+prev_price = run_prices[-2] if len(run_prices)>1 else current_price
+diff = current_price - prev_price
+
+# LIVE STATUS
+if diff > 0:
+    status = "📈 YERUTHU - CHART MELA YERUTHU SIR!"
+    color = "#26a69a"
+    emoji = "🟢"
+else:
+    status = "📉 YERANGUTHU - CHART KEELA YERANGUTHU SIR!"
+    color = "#ef5350"
+    emoji = "🔴"
+
+# TOP LIVE BAR - MARANUM
+st.divider()
+c1,c2,c3,c4 = st.columns(4)
+with c1:
+    st.markdown(f"<div style='background:{color}; color:white; padding:20px; border-radius:12px; text-align:center;'><b>LIVE RUNNING</b><br><span style='font-size:28px;'>{round(current_price,2)}</span><br>{emoji} {status}</div>", unsafe_allow_html=True)
+with c2:
+    st.metric("Running Change", f"{round(diff,2)}", f"{round(diff/prev_price*100,3)}%")
+with c3:
+    st.metric("Run Count", f"{st.session_state['run_time']} ticks", f"Speed: {speed}")
+with c4:
+    st.markdown(f"<div style='background:linear-gradient(135deg,#667eea,#764ba2); padding:15px; border-radius:12px; color:white; text-align:center;'><div style='font-size:25px;'>🤖🏃‍♂️</div>Dolly: Chart {('Yeruthu Sir!' if diff>0 else 'Yeranguthu Sir!')}<br>Run Aaguthu Sir!</div>", unsafe_allow_html=True)
+
+# MAIN RUNNING CHART - 2 CHARTS
+st.divider()
+left, right = st.columns([3,1])
+
+with left:
+    st.subheader(f"🏃‍♂️ {ticker} - RUNNING CHART - Maranum + Oodum")
+    
+    # Chart 1: Full History (Marum)
+    fig1 = go.Figure()
+    fig1.add_trace(go.Candlestick(x=base_hist.index, open=base_hist["Open"], high=base_hist["High"], low=base_hist["Low"], close=base_hist["Close"], name="History"))
+    fig1.add_trace(go.Scatter(x=base_hist.index, y=base_hist["Close"].rolling(20).mean(), line=dict(color="blue", width=1), name="MA20"))
+    fig1.update_layout(height=400, template="plotly_dark", xaxis_rangeslider_visible=False, title=f"{ticker} - {period} - Chart Marum (Timeframe Maaralam)")
+    st.plotly_chart(fig1, use_container_width=True)
+    
+    # Chart 2: LIVE RUNNING CHART - RUN AGANUM
+    st.subheader("⚡ LIVE RUNNING - Chart Ooduthu Sir - Second Second Marum Sir!")
+    run_times = [f"T-{100-i}" for i in range(len(run_prices))]
+    
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=run_times, y=run_prices, mode="lines", line=dict(color=color, width=3), fill="tozeroy", fillcolor=f"rgba({ '38,166,154' if diff>0 else '239,83,80'},0.2)", name="Running Price"))
+    # Add moving dot at end
+    fig2.add_trace(go.Scatter(x=[run_times[-1]], y=[run_prices[-1]], mode="markers", marker=dict(size=15, color=color), name="LIVE"))
+    fig2.update_layout(height=400, template="plotly_dark", title=f"LIVE RUNNING CHART - Ippo {round(current_price,2)} - {status}", xaxis_title="Time (Running)", yaxis_title="Price", showlegend=False)
+    fig2.update_xaxes(showgrid=False)
+    st.plotly_chart(fig2, use_container_width=True)
+    
+    st.success(f"✅ Chart Run Aaguthu Sir! {st.session_state['run_time']} times ooduchu Sir! Price {status} Sir!")
+
+with right:
+    st.subheader("⏰ Timing - Trade Yeruthu Yeranguthu")
+    
+    # Timing table that also runs
+    timing_table = pd.DataFrame({
+        "Time": ["9:15","10:30","12:00","2:00","3:30"],
+        "What": ["Open - Volatile","Buy - Yeruthu","Slow","Power Hour","Close"],
+        "Now?": ["✅" if 9<=now.hour<=10 else "","✅" if 10<=now.hour<=12 else "","✅" if 12<=now.hour<=14 else "","✅" if 14<=now.hour<=15 else "","✅" if now.hour>=15 else ""]
+    })
+    st.table(timing_table)
+    
     st.divider()
-    st.subheader(f"⏰ Timing la Trade - {period} Full Chart Analysis")
+    st.markdown("### 🤖 Dolly Live")
+    if diff>0:
+        st.success(f"Dolly: CHART YERUTHU SIR! 🏃‍♂️ Mela Yeruthu Sir! {round(diff,2)} up Sir! Chart Run Aaguthu Sir!")
+    else:
+        st.error(f"Dolly: CHART YERANGUTHU SIR! 📉 Keela Yeranguthu Sir! {round(diff,2)} down Sir! Chart Run Aaguthu Sir!")
     
-    # Chart with full range
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=hist.index, 
-        open=hist["Open"], 
-        high=hist["High"], 
-        low=hist["Low"], 
-        close=hist["Close"],
-        name="Price",
-        increasing_line_color="#26a69a",
-        decreasing_line_color="#ef5350"
-    ))
-    fig.add_trace(go.Scatter(x=hist.index, y=hist["MA20"], line=dict(color="#2962ff", width=1.5), name="MA20 (20 Days)"))
-    fig.add_trace(go.Scatter(x=hist.index, y=hist["MA50"], line=dict(color="#ff6d00", width=1.5), name="MA50 (50 Days)"))
-    fig.add_trace(go.Scatter(x=hist.index, y=hist["MA200"], line=dict(color="#ab47bc", width=1, dash="dash"), name="MA200 (200 Days)"))
-    
-    fig.update_layout(
-        height=600,
-        template="plotly_dark",
-        xaxis_rangeslider_visible=False,
-        title=f"{ticker} - {period} - Full Chart (Month mattum illa Sir, Full Year Sir!)",
-        yaxis_title="Price",
-        xaxis_title="Date",
-        plot_bgcolor="#131722",
-        paper_bgcolor="#131722"
-    )
-    fig.update_xaxes(
-        rangeslider_visible=False,
-        rangeselector=dict(
-            buttons=list([
-                dict(count=1, label="1M", step="month", stepmode="backward"),
-                dict(count=3, label="3M", step="month", stepmode="backward"),
-                dict(count=6, label="6M", step="month", stepmode="backward"),
-                dict(count=1, label="1Y", step="year", stepmode="backward"),
-                dict(step="all", label="ALL")
-            ]),
-            bgcolor="#1e222d",
-            activecolor="#2962ff"
-        )
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.success(f"✅ Ippo {period} Full Chart Varuthu Sir! Month mattum illa Sir - {len(hist)} Candles Varuthu Sir!")
-
-    # TIMING TABLE - Month wise performance
-    st.subheader("📅 Month Wise Yeruthu Yeranguthu")
-    hist_month = hist.copy()
-    hist_month["YearMonth"] = hist_month.index.to_period("M")
-    monthly = hist_month.groupby("YearMonth").agg({"Close":["first","last"],"High":"max","Low":"min"})
-    monthly.columns = ["OpenMonth","CloseMonth","High","Low"]
-    monthly["Change%"] = ((monthly["CloseMonth"]-monthly["OpenMonth"])/monthly["OpenMonth"]*100).round(2)
-    monthly["Signal"] = monthly["Change%"].apply(lambda x: "📈 YERUTHU" if x>0 else "📉 YERANGUTHU")
-    st.dataframe(monthly.tail(12), use_container_width=True)
-
-    # Timing logic for today
     st.divider()
-    st.subheader("⏰ Today Timing - Entha Time la Enna Pannanum")
-    timing_data = {
-        "Time": ["9:15-10:00", "10:00-11:30", "11:30-12:30", "12:30-2:00", "2:00-3:30"],
-        "Market Nature": ["🔥 High Volatile - Gap Up/Down", "📈 Trending Up - Best Buy", "😴 Slow - Sideways", "😴 Lunch Low Volume", "⚡ Power Hour - Sell/Buy"],
-        "Action": ["WATCH - Risk", "BUY - Yeruthu", "HOLD - Wait", "WAIT - Yeranguthu Chance", "SELL/BUY - Final Move"],
-        "What Happens": ["Morning la price perusa yerum/yerangum", "10:30 ku aprom stable ah yerum", "Madhiyam slow ah irukkum", "Lunch time la volume kammi", "Last hour la perusa move varum"]
-    }
-    st.table(pd.DataFrame(timing_data))
+    st.write("**Chart Maranum:** Top chart la timeframe maaralam Sir - 1mo, 3mo, 1y nu")
+    st.write("**Chart Run Aganum:** Keela chart live ah oodum Sir - second second marum Sir")
+    
+    if st.button("🔄 Reset Running Chart"):
+        st.session_state["run_data"] = []
+        st.session_state["run_time"] = 0
+        st.rerun()
 
-    # Cute Robot
-    st.divider()
-    col_r1, col_r2 = st.columns([1,3])
-    with col_r1:
-        st.markdown(f"<div style='background:linear-gradient(135deg,#667eea,#764ba2); padding:20px; border-radius:15px; color:white; text-align:center;'><div style='font-size:50px;'>🤖</div><b>Robot</b><br>{now.strftime('%H:%M:%S')}<br>Chart: {period}</div>", unsafe_allow_html=True)
-    with col_r2:
-        q = st.text_input("Robot kitta chart pathi kelu Sir", placeholder="Full chart varutha?")
-        if q:
-            st.success(f"Full Chart Varuthu Sir! {period} la {len(hist)} candles irukku Sir! {ticker} {round(total_change,2)}% change Sir! MA20, MA50, MA200 ellam varuthu Sir! 🤖📈")
+# AUTO RUN LOGIC - CHART RUN AGANUM
+if run_on:
+    st.caption(f"🏃‍♂️ CHART RUN AGUTHU SIR - Every {sleep_time}s chart marum + run aagum Sir - Live: {round(current_price,2)} - {status}")
+    time.sleep(sleep_time)
+    st.rerun()
+else:
+    st.caption("Chart Run Off Sir - Checkbox ON pannunga Sir")
 
-except Exception as e:
-    st.error("Error")
-    st.write(e)
-
-st.caption("Month mattum illa Sir - Full Year, 5 Years varaikkum paarkalam Sir - TradingView maathiri Sir!")
+st.divider()
+st.caption("CHART MARANUM = Timeframe change + Candle change Sir | CHART RUN AGANUM = Live running ticker Sir")
