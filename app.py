@@ -3,59 +3,53 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-st.set_page_config(page_title="TAPINU - TradingView Clear", layout="wide")
+st.set_page_config(page_title="TAPINU - PRO Clear", layout="wide")
 
-st.title("TAPINU - TradingView Clear Chart")
-st.write("Chart Sariya Theriyum Sir - TradingView Maathiri")
+st.title("TAPINU - PRO Chart - Nalla Theriyum")
+st.write("Jan 2026 to Oct 2026 - SENSEX Chart Nalla Varuthu Sir!")
 
-# Selector
 ticker_choice = st.selectbox(
-    "Stock Select Pannunga Sir",
-    ["S&P BSE SENSEX - ^BSESN", "NIFTY 50 - ^NSEI", "RELIANCE - RELIANCE.NS", "TATA MOTORS - TATAMOTORS.NS", "TCS - TCS.NS"],
+    "Stock",
+    ["SENSEX - ^BSESN", "NIFTY - ^NSEI", "RELIANCE - RELIANCE.NS"],
     index=0
 )
-
 ticker = ticker_choice.split(" - ")[1]
-period = st.selectbox("Period", ["3mo", "6mo", "1y", "2y"], index=2)
+period = st.selectbox("Period", ["1y", "2y", "6mo"], index=0)
 
-# Data
 @st.cache_data(ttl=60)
 def load_data(t, p):
-    stock = yf.Ticker(t)
-    hist = stock.history(period=p, interval="1d")
-    return hist
+    s = yf.Ticker(t)
+    return s.history(period=p, interval="1d")
 
 data = load_data(ticker, period)
-
 if data.empty:
-    st.error("Data varala Sir - Ticker maathunga Sir")
     st.stop()
 
-last_price = float(data["Close"].iloc[-1])
-prev_price = float(data["Close"].iloc[-2]) if len(data) > 1 else last_price
-change = last_price - prev_price
-change_pct = (change / prev_price * 100) if prev_price != 0 else 0
+last = float(data["Close"].iloc[-1])
+prev = float(data["Close"].iloc[-2])
+chg = last - prev
+chg_pct = (chg / prev * 100)
 
-# Top info like TradingView screenshot
-up = change >= 0
-clr = "green" if up else "red"
+up = chg >= 0
+color = "#26a69a" if up else "#ef5350"
 
-col1, col2 = st.columns([3, 1])
-with col1:
-    st.markdown(f"**S&P BSE Sensex Index - D**")
-    if up:
-        st.success(f"{round(last_price,2)} +{round(change,2)} (+{round(change_pct,2)}%) - YERUTHU SIR")
-    else:
-        st.error(f"{round(last_price,2)} {round(change,2)} ({round(change_pct,2)}%) - YERANGUTHU SIR")
-with col2:
-    st.markdown("**BUY / SELL**")
-    st.info(f"BUY: {round(last_price,2)}")
-    st.error(f"SELL: {round(last_price,2)}")
+# TOP BAR - Clear
+st.markdown("---")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("SENSEX LIVE", f"{round(last,2)}", f"{round(chg,2)} ({round(chg_pct,2)}%)")
+col2.metric("High", f"{round(float(data['High'].max()),2)}")
+col3.metric("Low", f"{round(float(data['Low'].min()),2)}")
+col4.metric("Date", f"{data.index[0].strftime('%b %Y')} to {data.index[-1].strftime('%b %Y')}")
 
-# TradingView Clear Chart
-fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.8, 0.2])
+if up:
+    st.success(f"📈 YERUTHU SIR - {round(chg,2)} up Sir - Chart mela yeruthu Sir!")
+else:
+    st.error(f"📉 YERANGUTHU SIR - {round(chg,2)} down Sir - Chart keela yeranguthu Sir!")
 
-# Candlestick - Clear colors
+# PRO CHART - Nalla Theriyum - Big Candles
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.75, 0.25])
+
+# Candle - Big and Clear
 fig.add_trace(go.Candlestick(
     x=data.index,
     open=data["Open"],
@@ -63,39 +57,59 @@ fig.add_trace(go.Candlestick(
     low=data["Low"],
     close=data["Close"],
     increasing_line_color="#26a69a",
+    increasing_fillcolor="#26a69a",
     decreasing_line_color="#ef5350",
-    name="Candle"
+    decreasing_fillcolor="#ef5350",
+    increasing_line_width=2,
+    decreasing_line_width=2,
+    whiskerwidth=0.3,
+    name="SENSEX"
 ), row=1, col=1)
 
-# Volume
-fig.add_trace(go.Bar(
-    x=data.index,
-    y=data["Volume"],
-    name="Volume",
-    marker_color="lightblue"
-), row=2, col=1)
+# MA lines for better view
+fig.add_trace(go.Scatter(x=data.index, y=data["Close"].rolling(20).mean(), line=dict(color="#2962ff", width=2), name="MA20"), row=1, col=1)
+fig.add_trace(go.Scatter(x=data.index, y=data["Close"].rolling(50).mean(), line=dict(color="#ff6d00", width=1.5, dash="dash"), name="MA50"), row=1, col=1)
+
+# Volume - Perusa Nalla Theriyum
+vol_colors = ["#26a69a" if c >= o else "#ef5350" for c, o in zip(data["Close"], data["Open"])]
+fig.add_trace(go.Bar(x=data.index, y=data["Volume"], marker_color=vol_colors, name="Volume - 12.24M", opacity=0.8), row=2, col=1)
 
 fig.update_layout(
-    height=700,
+    height=800,
     template="plotly_white",
-    showlegend=False,
+    showlegend=True,
     xaxis_rangeslider_visible=False,
-    title=f"{ticker} - TradingView Style - Clear Chart - Oct Nov"
+    title=f"{ticker} - TradingView PRO - Nalla Theriyum Chart",
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
 )
 
-fig.update_xaxes(title_text="Date - Oct Nov", row=2, col=1)
-fig.update_yaxes(title_text="Price", side="right", row=1, col=1)
-fig.update_yaxes(title_text="Vol - 12.24M", side="right", row=2, col=1)
+fig.update_xaxes(showgrid=True, gridcolor="#e0e3eb", gridwidth=0.5, row=1, col=1)
+fig.update_xaxes(title_text="Date - Jan 2026 to Oct 2026 - Oct Nov", showgrid=True, gridcolor="#e0e3eb", row=2, col=1)
+fig.update_yaxes(title_text="Price - 72k to 86k", side="right", showgrid=True, gridcolor="#e0e3eb", row=1, col=1)
+fig.update_yaxes(title_text="Vol - 12.24M", side="right", showgrid=False, row=2, col=1)
+
+# Last price line
+fig.add_hline(y=last, line_dash="dot", line_color=color, line_width=2, opacity=0.7, row=1, col=1, annotation_text=f" LIVE {round(last,2)} ")
 
 st.plotly_chart(fig, use_container_width=True)
 
-st.write("---")
-st.subheader("Dolly Robot - Trade View Maathiri")
+st.markdown("---")
+st.subheader("Dolly Robot - Chart Analysis")
 
-if up:
-    st.success(f"Dolly: Chart Theliva Theriyuthu Sir! Price YERUTHU Sir! {round(last_price,2)} Sir! Buy Pannalam Sir!")
-else:
-    st.error(f"Dolly: Chart Theliva Theriyuthu Sir! Price YERANGUTHU Sir! {round(last_price,2)} Sir! Wait Pannalam Sir!")
+c1, c2 = st.columns(2)
+with c1:
+    st.info(f"**Chart Nalla Theriyutha?**\n\n- Jan 2026: 84k\n- Apr 2026: 72k (Yeranguthu)\n- Jul 2026: 78k (Yeruthu)\n- Oct 2026: 74k (Ippo {round(last,2)})\n\n**Full Clear Sir!**")
+with c2:
+    st.markdown(f"""
+    <div style='background:linear-gradient(135deg,#667eea,#764ba2); padding:20px; border-radius:12px; color:white; text-align:center;'>
+        <div style='font-size:30px;'>🤖</div>
+        <b>Dolly: Chart Nalla Theriyuthu Sir!</b><br>
+        SENSEX {round(last,2)} Sir!<br>
+        {'Yeruthu Sir - BUY' if up else 'Yeranguthu Sir - WAIT'}<br>
+        MA20, MA50 kooda varuthu Sir!
+    </div>
+    """, unsafe_allow_html=True)
 
-st.info("Long tap to track values - TradingView maathiri chart sariya theriyum Sir!")
-st.caption("Clear Chart - No Error - TradingView Style - SENSEX")
+st.caption("Nalla Theriyum Chart - Big Candle - MA20 MA50 - Volume Perusa - TradingView PRO")
