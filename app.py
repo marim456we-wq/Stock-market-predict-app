@@ -2,161 +2,165 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from datetime import datetime
 import pytz
-import time
-import numpy as np
 
-st.set_page_config(page_title="TAPINU RUNNING CHART", layout="wide", page_icon="🏃‍♂️")
+st.set_page_config(page_title="TAPINU - PRO TradingView", layout="wide", page_icon="💎")
+
+st.markdown("""
+<style>
+.main {background: white;}
+.stApp {background: white;}
+</style>
+""", unsafe_allow_html=True)
+
 ist = pytz.timezone('Asia/Kolkata')
 now = datetime.now(ist)
 
-st.title("🏃‍♂️ CHART MARANUM + RUN AGANUM - LIVE RUNNING CHART")
-st.caption("Chart Live ah Oodum Sir - Marum Sir!")
+# TOP BAR LIKE SCREENSHOT - SENSEX + Icons
+st.markdown("""
+<div style='background:white; border-bottom:1px solid #e0e3eb; padding:8px 15px; display:flex; align-items:center; gap:15px; overflow-x:auto;'>
+    <span style='background:#8b9a5c; color:white; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;'>S</span>
+    <span style='background:#f0f3fa; padding:6px 15px; border-radius:20px; font-weight:600; color:#131722;'>SENSEX</span>
+    <span style='font-size:18px;'>◍◍</span>
+    <span style='font-size:18px; border:1px solid #e0e3eb; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center;'>+</span>
+    <span style='font-weight:600;'>D</span>
+    <span style='font-size:18px;'>◍◍</span>
+    <span style='font-size:16px;'>📊 Ind</span>
+</div>
+""", unsafe_allow_html=True)
 
-# Session for running data
-if "run_data" not in st.session_state:
-    st.session_state["run_data"] = []
-if "run_time" not in st.session_state:
-    st.session_state["run_time"] = 0
+# MAIN LAYOUT - LEFT TOOLS + CHART
+col_tools, col_chart = st.columns([0.7, 9.3])
 
-# Controls
-col1,col2,col3,col4 = st.columns(4)
-with col1:
-    ticker_list = {"RELIANCE":"RELIANCE.NS","TATA MOTORS":"TATAMOTORS.NS","TCS":"TCS.NS","INFY":"INFY.NS","TRENT":"TRENT.NS","BTC":"BTC-USD"}
-    sel = st.selectbox("Stock", list(ticker_list.keys()), index=0)
-with col2:
-    manual = st.text_input("Manual Search")
-with col3:
-    period = st.selectbox("Timeframe", ["1mo","3mo","1y","5y"], index=2)
-with col4:
-    speed = st.selectbox("Chart Run Speed", ["Fast ⚡","Medium 🏃","Slow 🐢"], index=0)
+with col_tools:
+    st.markdown("""
+    <div style='background:white; border-right:1px solid #e0e3eb; height:750px; display:flex; flex-direction:column; align-items:center; gap:18px; padding-top:15px;'>
+        <div style='font-size:22px; color:#6a6d78; background:#f0f3fa; padding:8px; border-radius:6px;'>┼</div>
+        <div style='font-size:20px; color:#6a6d78;'>╱</div>
+        <div style='font-size:18px; color:#6a6d78;'>☰◍</div>
+        <div style='font-size:18px; color:#6a6d78;'>◐◍</div>
+        <div style='font-size:18px; color:#6a6d78;'>◍─</div>
+        <div style='font-size:18px; color:#6a6d78;'>✎</div>
+        <div style='font-size:20px; color:#6a6d78;'>T</div>
+        <div style='font-size:18px; color:#6a6d78;'>☺</div>
+        <div style='font-size:18px; color:#6a6d78;'>📏</div>
+        <div style='font-size:18px; color:#6a6d78;'>⊕</div>
+        <div style='font-size:18px; color:#6a6d78;'>🧲</div>
+        <div style='font-size:18px; color:#6a6d78;'>✏️🔒</div>
+        <div style='font-size:18px; color:#6a6d78;'>🔓</div>
+        <div style='font-size:18px; color:#6a6d78;'>👁️</div>
+        <div style='font-size:18px; color:#6a6d78;'>🗑️</div>
+        <div style='font-size:18px; color:#6a6d78;'>◍</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-ticker = manual.strip().upper() if manual.strip()!="" else ticker_list[sel]
-speed_map = {"Fast ⚡":0.5,"Medium 🏃":1,"Slow 🐢":2}
-sleep_time = speed_map[speed]
-
-run_on = st.checkbox("▶️ CHART RUN ON - Maranum + Run Aganum", value=True)
-
-# Get base data
-@st.cache_data(ttl=60)
-def get_base(t,p):
-    s = yf.Ticker(t)
-    h = s.history(period=p)
-    return h
-
-base_hist = get_base(ticker, period)
-if base_hist.empty:
-    st.error("Data Not Found")
-    st.stop()
-
-last_close = float(base_hist["Close"].iloc[-1])
-
-# Generate running ticks - if market closed we simulate running
-if len(st.session_state["run_data"]) == 0:
-    # Initialize with last 50 points
-    init = base_hist.tail(50).copy()
-    st.session_state["run_data"] = init["Close"].tolist()
-    st.session_state["run_time"] = 0
-
-# Add new running point every rerun
-np.random.seed(int(time.time())%10000)
-change = np.random.uniform(-0.5, 0.5) if not (now.weekday()<5 and 9<=now.hour<=15) else np.random.uniform(-0.3, 0.3)
-new_price = st.session_state["run_data"][-1] * (1 + change/100)
-st.session_state["run_data"].append(new_price)
-if len(st.session_state["run_data"]) > 100:
-    st.session_state["run_data"] = st.session_state["run_data"][-100:]
-st.session_state["run_time"] += 1
-
-run_prices = st.session_state["run_data"]
-current_price = run_prices[-1]
-prev_price = run_prices[-2] if len(run_prices)>1 else current_price
-diff = current_price - prev_price
-
-# LIVE STATUS
-if diff > 0:
-    status = "📈 YERUTHU - CHART MELA YERUTHU SIR!"
-    color = "#26a69a"
-    emoji = "🟢"
-else:
-    status = "📉 YERANGUTHU - CHART KEELA YERANGUTHU SIR!"
-    color = "#ef5350"
-    emoji = "🔴"
-
-# TOP LIVE BAR - MARANUM
-st.divider()
-c1,c2,c3,c4 = st.columns(4)
-with c1:
-    st.markdown(f"<div style='background:{color}; color:white; padding:20px; border-radius:12px; text-align:center;'><b>LIVE RUNNING</b><br><span style='font-size:28px;'>{round(current_price,2)}</span><br>{emoji} {status}</div>", unsafe_allow_html=True)
-with c2:
-    st.metric("Running Change", f"{round(diff,2)}", f"{round(diff/prev_price*100,3)}%")
-with c3:
-    st.metric("Run Count", f"{st.session_state['run_time']} ticks", f"Speed: {speed}")
-with c4:
-    st.markdown(f"<div style='background:linear-gradient(135deg,#667eea,#764ba2); padding:15px; border-radius:12px; color:white; text-align:center;'><div style='font-size:25px;'>🤖🏃‍♂️</div>Dolly: Chart {('Yeruthu Sir!' if diff>0 else 'Yeranguthu Sir!')}<br>Run Aaguthu Sir!</div>", unsafe_allow_html=True)
-
-# MAIN RUNNING CHART - 2 CHARTS
-st.divider()
-left, right = st.columns([3,1])
-
-with left:
-    st.subheader(f"🏃‍♂️ {ticker} - RUNNING CHART - Maranum + Oodum")
+with col_chart:
+    # TICKER SELECT
+    ticker_list = {"S&P BSE SENSEX":"^BSESN","NIFTY 50":"^NSEI","RELIANCE":"RELIANCE.NS","TATA MOTORS":"TATAMOTORS.NS","TCS":"TCS.NS"}
+    sel = st.selectbox("Select", list(ticker_list.keys()), index=0, label_visibility="collapsed")
     
-    # Chart 1: Full History (Marum)
-    fig1 = go.Figure()
-    fig1.add_trace(go.Candlestick(x=base_hist.index, open=base_hist["Open"], high=base_hist["High"], low=base_hist["Low"], close=base_hist["Close"], name="History"))
-    fig1.add_trace(go.Scatter(x=base_hist.index, y=base_hist["Close"].rolling(20).mean(), line=dict(color="blue", width=1), name="MA20"))
-    fig1.update_layout(height=400, template="plotly_dark", xaxis_rangeslider_visible=False, title=f"{ticker} - {period} - Chart Marum (Timeframe Maaralam)")
-    st.plotly_chart(fig1, use_container_width=True)
+    ticker = ticker_list[sel]
     
-    # Chart 2: LIVE RUNNING CHART - RUN AGANUM
-    st.subheader("⚡ LIVE RUNNING - Chart Ooduthu Sir - Second Second Marum Sir!")
-    run_times = [f"T-{100-i}" for i in range(len(run_prices))]
+    @st.cache_data(ttl=60)
+    def get_data(t):
+        s = yf.Ticker(t)
+        h = s.history(period="1y", interval="1d")
+        return h
     
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=run_times, y=run_prices, mode="lines", line=dict(color=color, width=3), fill="tozeroy", fillcolor=f"rgba({ '38,166,154' if diff>0 else '239,83,80'},0.2)", name="Running Price"))
-    # Add moving dot at end
-    fig2.add_trace(go.Scatter(x=[run_times[-1]], y=[run_prices[-1]], mode="markers", marker=dict(size=15, color=color), name="LIVE"))
-    fig2.update_layout(height=400, template="plotly_dark", title=f"LIVE RUNNING CHART - Ippo {round(current_price,2)} - {status}", xaxis_title="Time (Running)", yaxis_title="Price", showlegend=False)
-    fig2.update_xaxes(showgrid=False)
-    st.plotly_chart(fig2, use_container_width=True)
+    hist = get_data(ticker)
+    if hist.empty:
+        st.stop()
     
-    st.success(f"✅ Chart Run Aaguthu Sir! {st.session_state['run_time']} times ooduchu Sir! Price {status} Sir!")
-
-with right:
-    st.subheader("⏰ Timing - Trade Yeruthu Yeranguthu")
+    last = float(hist["Close"].iloc[-1])
+    prev = float(hist["Close"].iloc[-2])
+    chg = last - prev
+    chg_pct = (chg/prev*100)
     
-    # Timing table that also runs
-    timing_table = pd.DataFrame({
-        "Time": ["9:15","10:30","12:00","2:00","3:30"],
-        "What": ["Open - Volatile","Buy - Yeruthu","Slow","Power Hour","Close"],
-        "Now?": ["✅" if 9<=now.hour<=10 else "","✅" if 10<=now.hour<=12 else "","✅" if 12<=now.hour<=14 else "","✅" if 14<=now.hour<=15 else "","✅" if now.hour>=15 else ""]
-    })
-    st.table(timing_table)
+    # TOP INFO LIKE SCREENSHOT - SENSEX + BUY SELL BOXES
+    st.markdown(f"""
+    <div style='background:white; padding:10px 15px;'>
+        <div style='display:flex; align-items:center; gap:8px;'>
+            <span style='background:#0052CC; color:white; padding:2px 7px; border-radius:50%; font-size:11px; font-weight:bold;'>BSE</span>
+            <span style='font-weight:700; font-size:16px; color:#131722;'>S&P BSE Sensex Index</span>
+            <span style='background:#f0f3fa; padding:2px 10px; border-radius:12px; font-size:12px;'>- D</span>
+            <span style='margin-left:auto; font-weight:600; color:#131722;'>75,750.00</span>
+        </div>
+        <div style='display:flex; align-items:center; gap:15px; margin-top:5px;'>
+            <span style='color:{"#26a69a" if chg>=0 else "#ef5350"}; font-size:15px; font-weight:500;'>{round(last,2)} {'+' if chg>=0 else ''}{round(chg,2)} ({'+' if chg>=0 else ''}{round(chg_pct,2)}%)</span>
+            <span style='margin-left:auto; font-weight:600;'>75,500.00</span>
+        </div>
+        <div style='display:flex; gap:10px; margin-top:8px;'>
+            <div style='border:1px solid #ef5350; color:#ef5350; padding:5px 15px; border-radius:6px; text-align:center; font-size:12px; background:#fff0f0;'>
+                <div>{round(last,2)}</div><div>SELL</div>
+            </div>
+            <div style='color:#6a6d78; font-size:12px; padding-top:10px;'>0.00</div>
+            <div style='border:1px solid #2962ff; color:#2962ff; padding:5px 15px; border-radius:6px; text-align:center; font-size:12px; background:#f0f6ff;'>
+                <div>{round(last,2)}</div><div>BUY</div>
+            </div>
+            <div style='margin-left:auto; font-weight:600; color:#6a6d78; font-size:14px;'>75,250.00<br><br>75,000.00</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    st.divider()
-    st.markdown("### 🤖 Dolly Live")
-    if diff>0:
-        st.success(f"Dolly: CHART YERUTHU SIR! 🏃‍♂️ Mela Yeruthu Sir! {round(diff,2)} up Sir! Chart Run Aaguthu Sir!")
-    else:
-        st.error(f"Dolly: CHART YERANGUTHU SIR! 📉 Keela Yeranguthu Sir! {round(diff,2)} down Sir! Chart Run Aaguthu Sir!")
+    # MAIN CHART WITH VOLUME - Like Screenshot
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.8, 0.2])
     
-    st.divider()
-    st.write("**Chart Maranum:** Top chart la timeframe maaralam Sir - 1mo, 3mo, 1y nu")
-    st.write("**Chart Run Aganum:** Keela chart live ah oodum Sir - second second marum Sir")
+    # Candlestick
+    fig.add_trace(go.Candlestick(
+        x=hist.index,
+        open=hist["Open"],
+        high=hist["High"],
+        low=hist["Low"],
+        close=hist["Close"],
+        increasing_line_color="#26a69a",
+        increasing_fillcolor="#26a69a",
+        decreasing_line_color="#ef5350",
+        decreasing_fillcolor="#ef5350",
+        name="Price"
+    ), row=1, col=1)
     
-    if st.button("🔄 Reset Running Chart"):
-        st.session_state["run_data"] = []
-        st.session_state["run_time"] = 0
-        st.rerun()
-
-# AUTO RUN LOGIC - CHART RUN AGANUM
-if run_on:
-    st.caption(f"🏃‍♂️ CHART RUN AGUTHU SIR - Every {sleep_time}s chart marum + run aagum Sir - Live: {round(current_price,2)} - {status}")
-    time.sleep(sleep_time)
-    st.rerun()
-else:
-    st.caption("Chart Run Off Sir - Checkbox ON pannunga Sir")
-
-st.divider()
-st.caption("CHART MARANUM = Timeframe change + Candle change Sir | CHART RUN AGANUM = Live running ticker Sir")
+    # Volume bars - bottom like screenshot
+    colors = ["#26a69a" if c>=o else "#ef5350" for c,o in zip(hist["Close"], hist["Open"])]
+    fig.add_trace(go.Bar(x=hist.index, y=hist["Volume"], marker_color=colors, name="Volume", opacity=0.6), row=2, col=1)
+    
+    fig.update_layout(
+        height=650,
+        template="plotly_white",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        showlegend=False,
+        margin=dict(l=10, r=90, t=5, b=10),
+        xaxis=dict(showgrid=True, gridcolor="#f0f3fa", rangeslider_visible=False, showticklabels=False),
+        xaxis2=dict(showgrid=True, gridcolor="#f0f3fa", tickformat="%b", tickfont=dict(size=13, color="#131722", family="Arial Black")),
+        yaxis=dict(side="right", showgrid=True, gridcolor="#f0f3fa", tickfont=dict(color="#131722", size=12, weight="bold"), showspikes=True),
+        yaxis2=dict(side="right", showgrid=False, showticklabels=False),
+        hovermode="x unified"
+    )
+    
+    # Current price line green box like screenshot
+    fig.add_hline(y=last, line_dash="dot", line_color="#9598a1", line_width=1, opacity=0.5, row=1, col=1)
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Bottom bar like screenshot
+    st.markdown(f"""
+    <div style='background:white; border-top:1px solid #e0e3eb; padding:8px 15px; display:flex; justify-content:space-between; align-items:center; color:#6a6d78; font-size:13px;'>
+        <span style='display:flex; align-items:center; gap:5px;'><span style='font-weight:bold; font-size:16px;'>↗</span> TradingView</span>
+        <span style='background:#e0e3eb; padding:5px 10px; border-radius:12px; display:flex; gap:5px;'><span>⚡</span></span>
+        <span style='background:#26a69a; color:white; padding:3px 10px; border-radius:4px;'>12.24 M</span>
+    </div>
+    <div style='background:white; border-top:1px solid #e0e3eb; padding:8px 15px; display:flex; justify-content:space-between; color:#6a6d78; font-size:13px;'>
+        <span>Oct</span><span>Nov</span><span style='margin-left:auto;'></span>
+    </div>
+    <div style='background:#f8f9fd; border-top:1px solid #e0e3eb; padding:8px 15px; display:flex; justify-content:space-between; color:#131722; font-size:13px;'>
+        <span>Date Range ▼</span>
+        <span>{now.strftime('%H:%M:%S')} UTC+5:30</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # LONG TAP POPUP LIKE SCREENSHOT
+    st.markdown("""
+    <div style='background:#2962ff; color:white; padding:12px 15px; border-radius:8px; display:flex; align-items:center; gap:15px; margin-top:10px;'>
+        <div style='
