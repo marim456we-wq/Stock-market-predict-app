@@ -4,802 +4,437 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from datetime import datetime
 
-# ==================================================
-# TAPINU ULTIMATE PRO
-# ==================================================
-
+# ---------------- CONFIG ----------------
 st.set_page_config(
-    page_title="TAPINU ULTIMATE PRO",
+    page_title="TAPINU PRO",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# -------------------- THEME --------------------
-
+# ---------------- DESIGN ----------------
 st.markdown("""
 <style>
 .stApp {
-    background: #0b0e11;
-    color: #eaecef;
-}
-header[data-testid="stHeader"] {
-    background: #0b0e11;
-}
-.block-container {
-    max-width: 1800px;
-    padding-top: 1rem;
+    background: #080d18;
+    color: #ffffff;
 }
 [data-testid="stSidebar"] {
-    background: #131722;
+    background: #101827;
 }
-[data-testid="stMetric"] {
-    background: #131722;
-    border: 1px solid #252a36;
-    padding: 13px;
-    border-radius: 10px;
+.block-container {
+    padding-top: 1.5rem;
+    max-width: 1500px;
 }
-div[data-testid="stTabs"] button {
-    color: #eaecef;
-}
-.pro-card {
-    background: #131722;
-    border: 1px solid #252a36;
+.metric-card {
+    background: #111c2e;
+    border: 1px solid #26364d;
+    padding: 17px;
     border-radius: 12px;
-    padding: 15px;
+    margin-bottom: 10px;
+}
+.metric-label {
+    color: #9aacc3;
+    font-size: 13px;
+}
+.metric-value {
+    color: white;
+    font-size: 25px;
+    font-weight: bold;
+}
+.metric-change {
+    color: #00d69a;
+    font-size: 13px;
+}
+div.stButton > button {
+    background: #1677ff;
+    color: white;
+    border-radius: 8px;
+    border: none;
+    width: 100%;
+}
+h1, h2, h3 {
+    color: white !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------- SYMBOLS --------------------
+# ---------------- HEADER ----------------
+st.markdown("# 📈 TAPINU PRO")
+st.caption("PROFESSIONAL MARKET ANALYTICS PLATFORM")
 
-STOCKS = {
-    "NIFTY 50": "^NSEI",
-    "SENSEX": "^BSESN",
-    "BANK NIFTY": "^NSEBANK",
-    "TCS": "TCS.NS",
-    "RELIANCE": "RELIANCE.NS",
-    "INFOSYS": "INFY.NS",
-    "HDFC BANK": "HDFCBANK.NS",
-    "ICICI BANK": "ICICIBANK.NS",
-    "WIPRO": "WIPRO.NS",
-    "ITC": "ITC.NS",
-    "SBIN": "SBIN.NS",
-    "BHARTI AIRTEL": "BHARTIARTL.NS",
-    "TATA STEEL": "TATASTEEL.NS",
-    "MARUTI": "MARUTI.NS",
-    "LT": "LT.NS",
-    "AXIS BANK": "AXISBANK.NS",
-    "KOTAK BANK": "KOTAKBANK.NS",
-    "TITAN": "TITAN.NS",
-    "BAJFINANCE": "BAJFINANCE.NS",
-    "SUN PHARMA": "SUNPHARMA.NS"
-}
+st.markdown("---")
 
-SECTORS = {
-    "IT": ["TCS", "INFOSYS", "WIPRO"],
-    "BANKING": ["HDFC BANK", "ICICI BANK", "SBIN", "AXIS BANK"],
-    "AUTO": ["MARUTI"],
-    "ENERGY": ["RELIANCE"],
-    "FMCG": ["ITC"],
-    "METALS": ["TATA STEEL"],
-    "PHARMA": ["SUN PHARMA"]
-}
+# ---------------- DATA ----------------
+@st.cache_data(ttl=60)
+def get_market_data(symbol, period, interval):
+    df = yf.download(
+        symbol,
+        period=period,
+        interval=interval,
+        auto_adjust=True,
+        progress=False
+    )
 
-# -------------------- DATA ENGINE --------------------
-
-@st.cache_data(ttl=300)
-def load_stock(symbol, period, interval):
-
-    try:
-        data = yf.download(
-            symbol,
-            period=period,
-            interval=interval,
-            auto_adjust=True,
-            progress=False
-        )
-
-        if data.empty:
-            return pd.DataFrame()
-
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-
-        data = data.loc[:, ~data.columns.duplicated()]
-        data = data.dropna(subset=["Close"]).copy()
-
-        for col in ["Open", "High", "Low", "Close", "Volume"]:
-            if col not in data.columns:
-                if col == "Volume":
-                    data[col] = 0
-                else:
-                    return pd.DataFrame()
-            data[col] = pd.to_numeric(data[col], errors="coerce")
-
-        data = data.dropna(subset=["Close"])
-
-        close = data["Close"]
-
-        # Moving averages
-        data["EMA20"] = close.ewm(span=20, adjust=False).mean()
-        data["EMA50"] = close.ewm(span=50, adjust=False).mean()
-        data["SMA200"] = close.rolling(200).mean()
-
-        # RSI
-        delta = close.diff()
-        gain = delta.clip(lower=0)
-        loss = -delta.clip(upper=0)
-
-        avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
-        avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
-
-        rs = avg_gain / avg_loss.replace(0, np.nan)
-        data["RSI"] = 100 - (100 / (1 + rs))
-        data["RSI"] = data["RSI"].fillna(50)
-
-        # MACD
-        ema12 = close.ewm(span=12, adjust=False).mean()
-        ema26 = close.ewm(span=26, adjust=False).mean()
-
-        data["MACD"] = ema12 - ema26
-        data["SIGNAL"] = data["MACD"].ewm(
-            span=9, adjust=False
-        ).mean()
-        data["HIST"] = data["MACD"] - data["SIGNAL"]
-
-        # Bollinger Bands
-        middle = close.rolling(20).mean()
-        std = close.rolling(20).std()
-
-        data["BB_UPPER"] = middle + 2 * std
-        data["BB_LOWER"] = middle - 2 * std
-
-        # Returns
-        data["RETURN"] = close.pct_change() * 100
-
-        return data
-
-    except Exception:
+    if df.empty:
         return pd.DataFrame()
 
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
 
-# -------------------- SIDEBAR --------------------
+    return df.dropna()
 
-st.sidebar.markdown("# 📈 TAPINU")
-st.sidebar.caption("ULTIMATE PRO TERMINAL")
+def indicators(df):
+    df = df.copy()
+
+    df["SMA20"] = df["Close"].rolling(20).mean()
+    df["SMA50"] = df["Close"].rolling(50).mean()
+
+    delta = df["Close"].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    df["RSI"] = 100 - (100 / (1 + rs))
+
+    ema12 = df["Close"].ewm(span=12, adjust=False).mean()
+    ema26 = df["Close"].ewm(span=26, adjust=False).mean()
+
+    df["MACD"] = ema12 - ema26
+    df["Signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
+
+    return df
+
+# ---------------- SIDEBAR ----------------
+st.sidebar.title("⚙️ CONTROL PANEL")
 
 page = st.sidebar.radio(
-    "NAVIGATION",
+    "Navigation",
     [
         "Dashboard",
-        "Advanced Chart",
-        "Stock Screener",
-        "Sector Heatmap",
-        "AI Lab",
-        "Paper Portfolio",
-        "Price Alerts"
+        "Market Chart",
+        "Watchlist",
+        "Portfolio",
+        "Customer Care"
     ]
 )
 
-st.sidebar.markdown("---")
+symbol = st.sidebar.text_input(
+    "Stock Symbol",
+    "RELIANCE.NS"
+).strip().upper()
 
-selected = st.sidebar.selectbox(
-    "Select Stock",
-    list(STOCKS.keys()),
+period = st.sidebar.selectbox(
+    "Chart Period",
+    ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
+    index=2
+)
+
+interval = st.sidebar.selectbox(
+    "Time Interval",
+    ["1d", "1h", "30m", "15m", "5m"],
     index=0
 )
 
-timeframes = {
-    "1 Minute": ("1d", "1m"),
-    "5 Minutes": ("5d", "5m"),
-    "15 Minutes": ("1mo", "15m"),
-    "1 Hour": ("6mo", "1h"),
-    "1 Day": ("1y", "1d"),
-    "1 Week": ("5y", "1wk")
-}
+# ---------------- MARKET ----------------
+@st.cache_data(ttl=60)
+def get_quote(symbol):
+    ticker = yf.Ticker(symbol)
+    return ticker.history(period="5d", interval="1d", auto_adjust=True)
 
-selected_tf = st.sidebar.selectbox(
-    "Chart Timeframe",
-    list(timeframes.keys()),
-    index=4
-)
+def show_market(symbol):
+    df = get_quote(symbol)
 
-period, interval = timeframes[selected_tf]
+    if df.empty:
+        st.error("Market data unavailable. Check the symbol.")
+        return
 
-st.sidebar.caption(
-    "Intraday availability depends on Yahoo Finance."
-)
+    current = float(df["Close"].iloc[-1])
+    previous = float(df["Close"].iloc[-2]) if len(df) > 1 else current
 
-# -------------------- HEADER --------------------
+    change = current - previous
+    percent = (change / previous * 100) if previous else 0
 
-st.markdown("# 📈 TAPINU ULTIMATE PRO")
-st.caption(
-    "INDIAN MARKET INTELLIGENCE • ADVANCED ANALYTICS"
-)
+    c1, c2, c3 = st.columns(3)
 
-st.markdown(
-    f"Last dashboard refresh: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}"
-)
-
-# -------------------- MAIN DATA --------------------
-
-symbol = STOCKS[selected]
-df = load_stock(symbol, period, interval)
-
-if df.empty:
-    st.error("Market data unavailable. Try another stock or timeframe.")
-    st.stop()
-
-latest = float(df["Close"].iloc[-1])
-previous = float(df["Close"].iloc[-2]) if len(df) > 1 else latest
-change = latest - previous
-change_pct = (change / previous * 100) if previous else 0
-
-# -------------------- CHART ENGINE --------------------
-
-def create_chart(data, chart_type="Candlestick",
-                 ema20=True, ema50=True,
-                 sma200=False, bollinger=False):
-
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.04,
-        row_heights=[0.75, 0.25]
-    )
-
-    if chart_type == "Candlestick":
-        fig.add_trace(
-            go.Candlestick(
-                x=data.index,
-                open=data["Open"],
-                high=data["High"],
-                low=data["Low"],
-                close=data["Close"],
-                name="Price",
-                increasing_line_color="#0ecb81",
-                decreasing_line_color="#f6465d"
-            ),
-            row=1, col=1
-        )
-    elif chart_type == "Area":
-        fig.add_trace(
-            go.Scatter(
-                x=data.index,
-                y=data["Close"],
-                name="Price",
-                fill="tozeroy",
-                line=dict(color="#2962ff", width=2)
-            ),
-            row=1, col=1
-        )
-    else:
-        fig.add_trace(
-            go.Scatter(
-                x=data.index,
-                y=data["Close"],
-                name="Price",
-                line=dict(color="#2962ff", width=2)
-            ),
-            row=1, col=1
+    with c1:
+        st.markdown(
+            f"""<div class="metric-card">
+            <div class="metric-label">CURRENT PRICE</div>
+            <div class="metric-value">₹{current:,.2f}</div>
+            </div>""",
+            unsafe_allow_html=True
         )
 
-    indicators = [
-        (ema20, "EMA20", "#ffb74d"),
-        (ema50, "EMA50", "#ab47bc"),
-        (sma200, "SMA200", "#00bfa5")
-    ]
-
-    for enabled, column, color in indicators:
-        if enabled:
-            fig.add_trace(
-                go.Scatter(
-                    x=data.index,
-                    y=data[column],
-                    name=column,
-                    line=dict(color=color, width=1.3)
-                ),
-                row=1, col=1
-            )
-
-    if bollinger:
-        fig.add_trace(
-            go.Scatter(
-                x=data.index,
-                y=data["BB_UPPER"],
-                name="BB Upper",
-                line=dict(color="#78909c", width=1, dash="dot")
-            ),
-            row=1, col=1
+    with c2:
+        st.markdown(
+            f"""<div class="metric-card">
+            <div class="metric-label">PRICE CHANGE</div>
+            <div class="metric-value">{change:+,.2f}</div>
+            </div>""",
+            unsafe_allow_html=True
         )
 
-        fig.add_trace(
-            go.Scatter(
-                x=data.index,
-                y=data["BB_LOWER"],
-                name="BB Lower",
-                line=dict(color="#78909c", width=1, dash="dot")
-            ),
-            row=1, col=1
+    with c3:
+        st.markdown(
+            f"""<div class="metric-card">
+            <div class="metric-label">CHANGE %</div>
+            <div class="metric-value">{percent:+.2f}%</div>
+            </div>""",
+            unsafe_allow_html=True
         )
 
-    colors = np.where(
-        data["Close"] >= data["Open"],
-        "#0ecb81",
-        "#f6465d"
-    )
+# ---------------- CHART ----------------
+def show_chart(symbol):
+    df = get_market_data(symbol, period, interval)
 
-    fig.add_trace(
-        go.Bar(
-            x=data.index,
-            y=data["Volume"],
-            name="Volume",
-            marker_color=colors
-        ),
-        row=2, col=1
-    )
+    if df.empty:
+        st.error("Unable to load chart data.")
+        return
+
+    df = indicators(df)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df["Open"],
+        high=df["High"],
+        low=df["Low"],
+        close=df["Close"],
+        name="Candlestick"
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["SMA20"],
+        name="SMA 20",
+        line=dict(color="#00c8ff", width=1.5)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["SMA50"],
+        name="SMA 50",
+        line=dict(color="#ffb000", width=1.5)
+    ))
 
     fig.update_layout(
         template="plotly_dark",
-        height=650,
-        paper_bgcolor="#131722",
-        plot_bgcolor="#131722",
-        margin=dict(l=10, r=10, t=35, b=10),
-        hovermode="x unified",
+        height=570,
+        paper_bgcolor="#080d18",
+        plot_bgcolor="#080d18",
         xaxis_rangeslider_visible=False,
-        legend=dict(orientation="h", y=1.04),
-        dragmode="pan"
+        margin=dict(l=10, r=10, t=30, b=10),
+        legend=dict(orientation="h")
     )
 
-    fig.update_xaxes(
-        gridcolor="#252a36",
-        showgrid=True,
-        rangeselector=dict(
-            buttons=[
-                dict(count=1, label="1M", step="month", stepmode="backward"),
-                dict(count=3, label="3M", step="month", stepmode="backward"),
-                dict(count=6, label="6M", step="month", stepmode="backward"),
-                dict(step="all", label="ALL")
-            ]
-        ),
-        row=1, col=1
-    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    fig.update_yaxes(
-        gridcolor="#252a36",
-        side="right"
-    )
+    left, right = st.columns(2)
 
-    return fig
+    with left:
+        st.subheader("RSI Indicator")
+        rsi_fig = go.Figure()
+        rsi_fig.add_trace(go.Scatter(
+            x=df.index, y=df["RSI"], name="RSI"
+        ))
+        rsi_fig.add_hline(y=70, line_dash="dash")
+        rsi_fig.add_hline(y=30, line_dash="dash")
+        rsi_fig.update_layout(
+            template="plotly_dark",
+            height=250,
+            paper_bgcolor="#080d18",
+            plot_bgcolor="#080d18"
+        )
+        st.plotly_chart(rsi_fig, use_container_width=True)
 
+    with right:
+        st.subheader("MACD Indicator")
+        macd_fig = go.Figure()
+        macd_fig.add_trace(go.Scatter(
+            x=df.index, y=df["MACD"], name="MACD"
+        ))
+        macd_fig.add_trace(go.Scatter(
+            x=df.index, y=df["Signal"], name="Signal"
+        ))
+        macd_fig.update_layout(
+            template="plotly_dark",
+            height=250,
+            paper_bgcolor="#080d18",
+            plot_bgcolor="#080d18"
+        )
+        st.plotly_chart(macd_fig, use_container_width=True)
 
-# ==================================================
-# PAGE 1: DASHBOARD
-# ==================================================
+    st.subheader("Market Data")
+    st.dataframe(df.tail(20), use_container_width=True)
 
+# ---------------- DASHBOARD ----------------
 if page == "Dashboard":
 
-    st.subheader("Market Overview")
+    st.title("Market Dashboard")
+    st.caption("Market data is supplied by Yahoo Finance.")
 
-    names = ["NIFTY 50", "SENSEX", "BANK NIFTY", "TCS"]
-
-    cols = st.columns(4)
-
-    for col, name in zip(cols, names):
-
-        market = load_stock(STOCKS[name], "5d", "1d")
-
-        with col:
-            if len(market) >= 2:
-                p = float(market["Close"].iloc[-1])
-                old = float(market["Close"].iloc[-2])
-                pct = (p - old) / old * 100 if old else 0
-                col.metric(name, f"{p:,.2f}", f"{pct:+.2f}%")
-            else:
-                col.metric(name, "Unavailable")
+    show_market(symbol)
 
     st.markdown("---")
+    st.subheader("Technical Analysis")
 
-    st.subheader(f"{selected} • Market Chart")
+    df = get_market_data(symbol, period, interval)
 
-    st.metric(
-        "Latest Available Price",
-        f"₹{latest:,.2f}",
-        f"{change_pct:+.2f}%"
-    )
+    if not df.empty:
+        df = indicators(df)
+        st.metric("RSI (14)", round(float(df["RSI"].iloc[-1]), 2))
+        st.metric("MACD", round(float(df["MACD"].iloc[-1]), 3))
 
-    st.plotly_chart(
-        create_chart(df, "Candlestick"),
-        use_container_width=True
-    )
+        rsi = df["RSI"].iloc[-1]
 
-    st.subheader("Technical Indicators")
+        if pd.notna(rsi):
+            if rsi > 70:
+                st.warning("RSI indicates a potentially overbought market.")
+            elif rsi < 30:
+                st.info("RSI indicates a potentially oversold market.")
+            else:
+                st.success("RSI is in the middle range.")
 
-    a, b, c, d = st.columns(4)
+    st.markdown("---")
+    st.info("Analytics only. These indicators are not guaranteed trading signals.")
 
-    a.metric("RSI", f"{df['RSI'].iloc[-1]:.2f}")
-    b.metric("MACD", f"{df['MACD'].iloc[-1]:.2f}")
-    c.metric("EMA 20", f"{df['EMA20'].iloc[-1]:,.2f}")
-    d.metric("EMA 50", f"{df['EMA50'].iloc[-1]:,.2f}")
+# ---------------- MARKET CHART ----------------
+elif page == "Market Chart":
+    st.title("Advanced Trading Chart")
+    show_chart(symbol)
 
-    st.subheader("Market Watchlist")
+# ---------------- WATCHLIST ----------------
+elif page == "Watchlist":
 
-    rows = []
+    st.title("My Watchlist")
 
-    for name, ticker in STOCKS.items():
+    default_symbols = [
+        "RELIANCE.NS",
+        "TCS.NS",
+        "INFY.NS",
+        "HDFCBANK.NS",
+        "ICICIBANK.NS",
+        "BTC-USD",
+        "ETH-USD"
+    ]
 
-        stock = load_stock(ticker, "5d", "1d")
+    for item in default_symbols:
+        try:
+            data = get_quote(item)
+            if not data.empty:
+                price = float(data["Close"].iloc[-1])
+                st.markdown(
+                    f"""<div class="metric-card">
+                    <b>{item}</b>
+                    <span style="float:right">₹{price:,.2f}
+                    </span></div>""",
+                    unsafe_allow_html=True
+                )
+        except Exception:
+            st.write(item, "Data unavailable")
 
-        if len(stock) >= 2:
-            p = float(stock["Close"].iloc[-1])
-            old = float(stock["Close"].iloc[-2])
+# ---------------- PAPER PORTFOLIO ----------------
+elif page == "Portfolio":
 
-            rows.append({
-                "Stock": name,
-                "Price": round(p, 2),
-                "Change %": round((p-old)/old*100, 2)
-            })
+    st.title("Demo Portfolio")
+    st.caption("Virtual portfolio for educational tracking. No real trades.")
 
-    if rows:
-        st.dataframe(
-            pd.DataFrame(rows),
-            use_container_width=True,
-            hide_index=True
-        )
+    if "demo_cash" not in st.session_state:
+        st.session_state.demo_cash = 100000.0
 
+    if "demo_holdings" not in st.session_state:
+        st.session_state.demo_holdings = {}
 
-# ==================================================
-# PAGE 2: ADVANCED CHART
-# ==================================================
+    st.metric("Virtual Cash", f"₹{st.session_state.demo_cash:,.2f}")
 
-elif page == "Advanced Chart":
+    stock = st.text_input("Demo Stock Symbol", "RELIANCE.NS").upper()
+    quantity = st.number_input("Quantity", min_value=1, value=1)
 
-    st.subheader("Professional Chart Terminal")
+    if st.button("Add Demo Holding"):
+        try:
+            data = get_quote(stock)
+            if data.empty:
+                st.error("Price unavailable")
+            else:
+                price = float(data["Close"].iloc[-1])
+                cost = price * quantity
 
-    chart_type = st.selectbox(
-        "Chart Style",
-        ["Candlestick", "Line", "Area"]
-    )
+                if cost <= st.session_state.demo_cash:
+                    holdings = st.session_state.demo_holdings
+                    holdings[stock] = holdings.get(stock, 0) + quantity
+                    st.session_state.demo_cash -= cost
+                    st.success("Demo holding added.")
+                else:
+                    st.error("Not enough virtual cash.")
+        except Exception:
+            st.error("Unable to fetch price.")
 
-    c1, c2, c3, c4 = st.columns(4)
-
-    with c1:
-        ema20 = st.checkbox("EMA 20", True)
-
-    with c2:
-        ema50 = st.checkbox("EMA 50", True)
-
-    with c3:
-        sma200 = st.checkbox("SMA 200", False)
-
-    with c4:
-        bollinger = st.checkbox("Bollinger Bands", False)
-
-    st.plotly_chart(
-        create_chart(
-            df,
-            chart_type,
-            ema20,
-            ema50,
-            sma200,
-            bollinger
-        ),
-        use_container_width=True,
-        config={
-            "scrollZoom": True,
-            "displaylogo": False,
-            "responsive": True,
-            "modeBarButtonsToAdd": ["drawline", "drawrect", "eraseshape"]
-        }
-    )
-
-    st.subheader("MACD Analysis")
-
-    macd_fig = go.Figure()
-
-    macd_fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["MACD"],
-        name="MACD",
-        line=dict(color="#2962ff")
-    ))
-
-    macd_fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["SIGNAL"],
-        name="Signal",
-        line=dict(color="#ffb74d")
-    ))
-
-    macd_fig.update_layout(
-        template="plotly_dark",
-        height=280,
-        paper_bgcolor="#131722",
-        plot_bgcolor="#131722"
-    )
-
-    st.plotly_chart(macd_fig, use_container_width=True)
-
-    st.subheader("RSI Analysis")
-
-    rsi_fig = go.Figure()
-
-    rsi_fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["RSI"],
-        name="RSI",
-        line=dict(color="#ab47bc", width=2)
-    ))
-
-    rsi_fig.add_hline(y=70, line_dash="dash")
-    rsi_fig.add_hline(y=30, line_dash="dash")
-
-    rsi_fig.update_layout(
-        template="plotly_dark",
-        height=250,
-        paper_bgcolor="#131722",
-        plot_bgcolor="#131722",
-        yaxis=dict(range=[0, 100])
-    )
-
-    st.plotly_chart(rsi_fig, use_container_width=True)
-
-
-# ==================================================
-# PAGE 3: STOCK SCREENER
-# ==================================================
-
-elif page == "Stock Screener":
-
-    st.subheader("🔎 Advanced Stock Screener")
-
-    screen_rows = []
-
-    with st.spinner("Scanning stocks..."):
-
-        for name, ticker in STOCKS.items():
-
-            stock = load_stock(ticker, "1y", "1d")
-
-            if len(stock) < 2:
-                continue
-
-            p = float(stock["Close"].iloc[-1])
-            old = float(stock["Close"].iloc[-2])
-            pct = (p-old)/old*100 if old else 0
-            rsi = float(stock["RSI"].iloc[-1])
-
-            screen_rows.append({
-                "Stock": name,
-                "Price": round(p, 2),
-                "Change %": round(pct, 2),
-                "RSI": round(rsi, 2),
-                "EMA20": round(float(stock["EMA20"].iloc[-1]), 2),
-                "EMA50": round(float(stock["EMA50"].iloc[-1]), 2)
-            })
-
-    if screen_rows:
-
-        screen_df = pd.DataFrame(screen_rows)
-
-        filter_type = st.selectbox(
-            "Screening Filter",
-            [
-                "All Stocks",
-                "Top Gainers",
-                "Top Losers",
-                "RSI Below 30",
-                "RSI Above 70",
-                "Above EMA20"
-            ]
-        )
-
-        if filter_type == "Top Gainers":
-            screen_df = screen_df.sort_values(
-                "Change %", ascending=False
-            )
-
-        elif filter_type == "Top Losers":
-            screen_df = screen_df.sort_values(
-                "Change %", ascending=True
-            )
-
-        elif filter_type == "RSI Below 30":
-            screen_df = screen_df[screen_df["RSI"] < 30]
-
-        elif filter_type == "RSI Above 70":
-            screen_df = screen_df[screen_df["RSI"] > 70]
-
-        elif filter_type == "Above EMA20":
-            screen_df = screen_df[
-                screen_df["Price"] > screen_df["EMA20"]
-            ]
-
-        st.dataframe(
-            screen_df,
-            use_container_width=True,
-            hide_index=True
-        )
-
+    st.subheader("Your Demo Holdings")
+    if st.session_state.demo_holdings:
+        for name, qty in st.session_state.demo_holdings.items():
+            st.write(f"**{name}** — {qty} units")
     else:
-        st.warning("No screening data available.")
+        st.write("No demo holdings yet.")
 
+# ---------------- CUSTOMER CARE ----------------
+elif page == "Customer Care":
 
-# ==================================================
-# PAGE 4: SECTOR HEATMAP
-# ==================================================
+    st.title("🤖 TAPINU AI Customer Care")
+    st.caption("Automated help assistant - basic demo version.")
 
-elif page == "Sector Heatmap":
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
 
-    st.subheader("Market Sector Heatmap")
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
 
-    heat_rows = []
+    user_message = st.chat_input("Ask TAPINU support...")
 
-    for sector, members in SECTORS.items():
+    if user_message:
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": user_message
+        })
 
-        for name in members:
+        msg = user_message.lower()
 
-            stock = load_stock(STOCKS[name], "5d", "1d")
-
-            if len(stock) >= 2:
-
-                p = float(stock["Close"].iloc[-1])
-                old = float(stock["Close"].iloc[-2])
-
-                pct = (p-old)/old*100 if old else 0
-
-                heat_rows.append({
-                    "Sector": sector,
-                    "Stock": name,
-                    "Change": round(pct, 2)
-                })
-
-    if heat_rows:
-
-        heat_df = pd.DataFrame(heat_rows)
-
-        fig = go.Figure(go.Treemap(
-            labels=heat_df["Stock"],
-            parents=heat_df["Sector"],
-            values=[1] * len(heat_df),
-            marker=dict(
-                colors=heat_df["Change"],
-                colorscale=[
-                    [0, "#f6465d"],
-                    [0.5, "#252a36"],
-                    [1, "#0ecb81"]
-                ],
-                cmid=0,
-                colorbar=dict(title="Change %")
-            ),
-            customdata=heat_df[["Change"]],
-            hovertemplate=(
-                "<b>%{label}</b><br>"
-                "Change: %{customdata[0]:.2f}%"
-                "<extra></extra>"
-            )
-        ))
-
-        fig.update_layout(
-            template="plotly_dark",
-            height=550,
-            paper_bgcolor="#131722"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(heat_df, use_container_width=True)
-
-    else:
-        st.warning("Sector data unavailable.")
-
-
-# ==================================================
-# PAGE 5: AI LAB
-# ==================================================
-
-elif page == "AI Lab":
-
-    st.subheader("🤖 TAPINU AI Research Lab")
-
-    st.caption(
-        "Experimental statistical analysis, not guaranteed predictions."
-    )
-
-    if len(df) >= 30:
-
-        prices = df["Close"].tail(60).dropna().values
-        x = np.arange(len(prices))
-
-        slope, intercept = np.polyfit(x, prices, 1)
-
-        future_x = np.arange(len(prices), len(prices)+8)
-        predicted = slope*future_x + intercept
-
-        future_dates = pd.bdate_range(
-            start=df.index[-1] + pd.Timedelta(days=1),
-            periods=8
-        )
-
-        forecast = go.Figure()
-
-        forecast.add_trace(go.Scatter(
-            x=df.index[-len(prices):],
-            y=prices,
-            name="Historical",
-            line=dict(color="#2962ff", width=2)
-        ))
-
-        forecast.add_trace(go.Scatter(
-            x=future_dates,
-            y=predicted,
-            name="Experimental Projection",
-            line=dict(color="#f0b90b", dash="dash", width=2)
-        ))
-
-        forecast.update_layout(
-            template="plotly_dark",
-            height=400,
-            paper_bgcolor="#131722",
-            plot_bgcolor="#131722"
-        )
-
-        st.plotly_chart(forecast, use_container_width=True)
-
-        rsi = float(df["RSI"].iloc[-1])
-        ema = float(df["EMA20"].iloc[-1])
-        macd = float(df["MACD"].iloc[-1])
-        signal_line = float(df["SIGNAL"].iloc[-1])
-
-        trend_score = 0
-
-        if latest > ema:
-            trend_score += 1
-
-        if macd > signal_line:
-            trend_score += 1
-
-        if rsi > 50:
-            trend_score += 1
-
-        st.metric("Trend Conditions", f"{trend_score}/3")
-        st.metric("Current RSI", f"{rsi:.2f}")
-
-        st.write("### Research interpretation")
-
-        if trend_score == 3:
-            st.success("Positive indicator alignment")
-        elif trend_score == 0:
-            st.warning("Negative indicator alignment")
+        if "chart" in msg:
+            answer = "Open Market Chart to see candlestick charts and indicators."
+        elif "watchlist" in msg:
+            answer = "Open Watchlist to monitor selected market symbols."
+        elif "portfolio" in msg:
+            answer = "Open Portfolio to manage your virtual demo holdings."
+        elif "rsi" in msg:
+            answer = "RSI is a momentum indicator, commonly measured from 0 to 100."
+        elif "macd" in msg:
+            answer = "MACD is a technical indicator based on moving averages."
+        elif "price" in msg or "market" in msg:
+            answer = "Choose a stock symbol in the sidebar and open Dashboard."
+        elif "hello" in msg or "hi" in msg:
+            answer = "Hello! Welcome to TAPINU PRO Support. How can I help?"
         else:
-            st.info("Mixed indicator conditions")
+            answer = "Thanks for contacting TAPINU Support. Please ask about charts, market data, RSI, MACD, watchlists or demo portfolio."
 
-        st.write(
-            f"Illustrative 7-session final projection: "
-            f"₹{predicted[-1]:,.2f}"
-        )
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": answer
+        })
 
-        st.warning(
-            "Linear regression is a simple statistical baseline. "
-            "It is not a validated AI trading model. Forecasts can be wrong."
-        )
+        st.rerun()
 
-    else:
-        st.warning("Insufficient historical data.")
+# ---------------- FOOTER ----------------
+st.markdown("---")
+st.caption(
+    "TAPINU PRO © 2026 | Educational Market Analytics | "
+    "Yahoo Finance data may be delayed or unavailable. "
+    "Not financial advice."
+)
 
-
-# ==================================================
-# PAGE 6: PAPER PORTFOLIO
-# ==================================================
-
-elif page == "Paper Portfolio":
-
-    st.subheader("💼 Paper Portfolio Tracker")
-
-    st.info(
-        "Practice tracking hypothetical investments. "
-        "This does not place re
