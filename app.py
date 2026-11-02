@@ -2,17 +2,24 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
+import pytz
 
-st.set_page_config(page_title="TAPINU CLEAR", layout="wide")
+st.set_page_config(page_title="TAPINU IST TIME", layout="wide")
 
 # Auto refresh 1 sec
 try:
     from streamlit_autorefresh import st_autorefresh
-    st_autorefresh(interval=1000, key="clear_graph")
+    st_autorefresh(interval=1000, key="ist_time")
 except:
     pass
 
-st.title("TAPINU - Thelivaana Graph")
+# IST Timezone - IMPORTANT
+IST = pytz.timezone("Asia/Kolkata")
+
+def now_ist():
+    return datetime.now(IST)
+
+st.title("TAPINU - Correct IST Time")
 
 symbol = st.text_input("Symbol", value="TCS.NS")
 symbol = symbol.strip().upper()
@@ -46,7 +53,8 @@ base = get_base(symbol)
 if symbol not in st.session_state["base_price"]:
     st.session_state["base_price"][symbol] = base
     st.session_state["tick_history"][symbol] = [base]*80
-    st.session_state["tick_time"][symbol] = [datetime.now()]*80
+    # IST time store pannuren
+    st.session_state["tick_time"][symbol] = [now_ist()]*80
 
 import numpy as np
 last = st.session_state["base_price"][symbol]
@@ -60,19 +68,56 @@ hist = hist[-120:]
 st.session_state["tick_history"][symbol] = hist
 
 tt = st.session_state["tick_time"][symbol]
-tt.append(datetime.now())
+tt.append(now_ist())
 tt = tt[-120:]
 st.session_state["tick_time"][symbol] = tt
 
-# Price
+# Current IST time - Thelivaa
+cur_ist = now_ist()
+cur_str = cur_ist.strftime("%d-%m-%Y %H:%M:%S IST")
+cur_time_only = cur_ist.strftime("%H:%M:%S")
+
+# Market status - IST la run agura mari
+market_open = False
+hour = cur_ist.hour
+minute = cur_ist.minute
+# NSE 9:15 to 15:30 IST
+if 9 <= hour <= 15:
+    if hour == 9 and minute < 15:
+        market_open = False
+    elif hour == 15 and minute > 30:
+        market_open = False
+    else:
+        market_open = True
+
+status_text = "🟢 MARKET OPEN - LIVE RUNNING" if market_open else "🔴 MARKET CLOSED - DEMO TICK"
+status_color = "#00a25b" if market_open else "#eb5b3c"
+
+# Price display with correct IST time
 change = tick - hist[0]
 pct = change / hist[0] * 100 if hist[0]!=0 else 0
 up = change >= 0
 color = "#00a25b" if up else "#eb5b3c"
 
-st.metric(label=f"{symbol} - {datetime.now().strftime('%H:%M:%S')}", value=f"Rs {tick:,.2f}", delta=f"{change:+.2f} ({pct:+.2f}%)")
+st.markdown(f"""
+<div style='background:white; border:2px solid {status_color}; border-radius:12px; padding:14px;'>
+    <div style='display:flex; justify-content:space-between;'>
+        <div>
+            <div style='font-size:11px; color:#6a6d78;'>{symbol} • {status_text}</div>
+            <div style='font-size:28px; font-weight:800; color:{color};'>Rs {tick:,.2f}</div>
+            <div style='font-size:12px; color:{color}; font-weight:600;'>{change:+.2f} ({pct:+.2f}%) • Real Base {base:.2f}</div>
+        </div>
+        <div style='text-align:right;'>
+            <div style='font-size:11px; color:#6a6d78;'>CHENNAI TIME - IST</div>
+            <div style='font-size:20px; font-weight:800; color:#131722;'>{cur_time_only}</div>
+            <div style='font-size:11px; color:#6a6d78;'>{cur_ist.strftime("%d %b %Y")}</div>
+            <div style='font-size:10px; color:{status_color}; font-weight:700; margin-top:4px;'>{status_text}</div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-# AI Signal
+# AI
 def ai_signal(prices):
     if len(prices) < 20:
         return "HOLD", 50
@@ -102,139 +147,96 @@ def ai_signal(prices):
         return "HOLD", score
 
 signal, score = ai_signal(hist)
+sma20_val = np.mean(hist[-20:]) if len(hist)>=20 else hist[-1]
 
-# CLEAR GRAPH - TradingView Style
-st.subheader("Crystal Clear Graph - Thelivaana Chart")
+# CRYSTAL CLEAR GRAPH WITH IST TIME
+st.subheader(f"Graph - Chennai IST Time la Running - {cur_str}")
 
 fig = go.Figure()
 
-# Main line - thick and clear
 fig.add_trace(go.Scatter(
     x=tt,
     y=hist,
     mode="lines",
-    line=dict(color=color, width=3, shape="spline", smoothing=0.8),
+    line=dict(color=color, width=3, shape="spline", smoothing=0.6),
     fill="tozeroy",
     fillcolor="rgba(0,162,91,0.08)" if up else "rgba(235,91,60,0.08)",
-    name="LTP",
-    hovertemplate="<b>Price: Rs %{y:.2f}</b><br>Time: %{x|%H:%M:%S}<extra></extra>"
+    name=f"Price - IST {cur_time_only}",
+    hovertemplate="<b>Rs %{y:.2f}</b><br>IST: %{x|%H:%M:%S}<br>Date: %{x|%d-%b}<extra></extra>"
 ))
 
-# SMA line - clear dotted
-sma20_val = np.mean(hist[-20:]) if len(hist)>=20 else hist[-1]
 fig.add_trace(go.Scatter(
     x=tt,
     y=[sma20_val]*len(tt),
     mode="lines",
     line=dict(color="#2962FF", width=1.5, dash="dot"),
-    name=f"SMA20 {sma20_val:.0f}",
-    hoverinfo="skip"
+    name=f"SMA20 {sma20_val:.0f}"
 ))
 
-# Current price big dot
 fig.add_trace(go.Scatter(
     x=[tt[-1]],
     y=[tick],
     mode="markers+text",
-    marker=dict(size=14, color=color, line=dict(width=2, color="white")),
-    text=[f"  Rs {tick:.2f}"],
+    marker=dict(size=15, color=color, line=dict(width=2, color="white")),
+    text=[f"  Rs {tick:.2f} • {cur_time_only} IST"],
     textposition="middle right",
-    textfont=dict(size=13, color=color, family="Inter"),
-    name="NOW",
-    hovertemplate="<b>NOW: Rs %{y:.2f}</b><extra></extra>"
+    textfont=dict(size=12, color=color, family="Inter"),
+    name="NOW IST"
 ))
 
-# BUY/SELL markers
-for i in range(5, len(hist), 20):
-    if hist[i] > hist[i-5] and hist[i] > sma20_val:
-        fig.add_annotation(x=tt[i], y=hist[i], text="BUY", showarrow=True, arrowhead=1, arrowcolor="#00a25b", bgcolor="#00a25b", font=dict(color="white", size=10))
-
-# Layout - Crystal Clear
 fig.update_layout(
     height=550,
     plot_bgcolor="#ffffff",
     paper_bgcolor="#ffffff",
-    font=dict(family="Inter, sans-serif", size=12, color="#131722"),
-    margin=dict(l=10, r=80, t=20, b=40),
+    font=dict(family="Inter", size=12, color="#131722"),
+    margin=dict(l=10, r=90, t=20, b=50),
     showlegend=True,
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(255,255,255,0.8)", bordercolor="#e0e3eb", borderwidth=1),
+    legend=dict(orientation="h", y=1.02, xanchor="right", x=1),
     xaxis=dict(
         showgrid=True,
         gridcolor="#f0f3fa",
-        gridwidth=1,
-        showline=True,
         linecolor="#e0e3eb",
-        linewidth=1,
-        tickformat="%H:%M:%S",
-        title=dict(text="TIME - Second ku Second", font=dict(size=12, color="#6a6d78")),
-        tickfont=dict(size=11, color="#6a6d78"),
-        rangeslider=dict(visible=False)
+        tickformat="%H:%M:%S<br>%d-%b",
+        title=dict(text=f"CHENNAI IST TIME - {cur_ist.strftime('%d-%m-%Y')} - Second ku Second", font=dict(size=12)),
+        tickfont=dict(size=11)
     ),
     yaxis=dict(
         showgrid=True,
         gridcolor="#f0f3fa",
-        gridwidth=1,
-        showline=True,
-        linecolor="#e0e3eb",
-        linewidth=1,
         side="right",
-        title=dict(text="PRICE Rs - Real Time", font=dict(size=12, color="#6a6d78")),
-        tickfont=dict(size=11, color="#131722"),
-        tickformat=",.0f",
-        separatethousands=True
+        title=dict(text="Price Rs IST"),
+        tickformat=",.0f"
     ),
-    hovermode="x unified",
-    hoverlabel=dict(bgcolor="white", font_size=12, font_family="Inter", bordercolor="#e0e3eb")
+    hovermode="x unified"
 )
 
-st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True, "displaylogo": False, "modeBarButtonsToRemove": ["select2d","lasso2d"]})
+st.plotly_chart(fig, use_container_width=True)
 
-# Second chart - Volume style clear bars
-st.subheader("Volume + RSI - Thelivaana Info")
+# Time info
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.info(f"🕐 IST Time: {cur_str}")
+with c2:
+    utc_now = datetime.now(pytz.utc)
+    st.write(f"🌍 UTC: {utc_now.strftime('%H:%M:%S')} (Server Time)")
+with c3:
+    if market_open:
+        st.success(f"✅ Market Open - 9:15 AM to 3:30 PM IST - Live Running")
+    else:
+        st.warning(f"⏰ Market Closed - IST {cur_time_only} - Demo Tick Running")
 
-col1, col2 = st.columns(2)
-
-with col1:
-    # RSI chart clear
-    rsi_vals = []
-    for i in range(14, len(hist)):
-        sub = hist[i-14:i]
-        deltas = np.diff(sub)
-        gains = np.where(np.array(deltas)>0, deltas, 0)
-        losses = np.where(np.array(deltas)<0, -np.array(deltas), 0)
-        avg_g = np.mean(gains) if len(gains)>0 else 0.1
-        avg_l = np.mean(losses) if len(losses)>0 else 0.1
-        rsi = 100 - (100/(1+avg_g/(avg_l+0.0001)))
-        rsi_vals.append(rsi)
-    rsi_times = tt[14:]
-    
-    fig_rsi = go.Figure()
-    fig_rsi.add_trace(go.Scatter(x=rsi_times, y=rsi_vals, mode="lines", line=dict(color="#7c4dff", width=2.5), name="RSI", fill="tozeroy", fillcolor="rgba(124,77,255,0.1)"))
-    fig_rsi.add_hline(y=70, line_dash="dash", line_color="#eb5b3c", annotation_text="Overbought 70")
-    fig_rsi.add_hline(y=30, line_dash="dash", line_color="#00a25b", annotation_text="Oversold 30")
-    fig_rsi.add_hline(y=50, line_dash="dot", line_color="#9e9e9e")
-    fig_rsi.update_layout(height=250, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=10,r=50,t=10,b=20), xaxis=dict(tickformat="%H:%M:%S", title="Time"), yaxis=dict(range=[0,100], title="RSI"), showlegend=False)
-    st.plotly_chart(fig_rsi, use_container_width=True)
-
-with col2:
-    st.markdown(f"""
-    <div style='background:white; border:1px solid #e0e3eb; border-radius:12px; padding:16px;'>
-        <div style='font-size:12px; color:#6a6d78;'>AI ANALYSIS - THELIVAANA</div>
-        <div style='font-size:20px; font-weight:700; margin-top:8px; color:{color};'>{signal} - {score:.0f}%</div>
-        <div style='margin-top:12px; font-size:13px;'>
-            <div style='display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f5f5f5;'><span>LTP</span><b>Rs {tick:.2f}</b></div>
-            <div style='display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f5f5f5;'><span>SMA20</span><b>Rs {sma20_val:.2f}</b></div>
-            <div style='display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f5f5f5;'><span>Change</span><b style='color:{color};'>{change:+.2f} ({pct:+.2f}%)</b></div>
-            <div style='display:flex; justify-content:space-between; padding:6px 0;'><span>Time</span><b>{datetime.now().strftime('%H:%M:%S')}</b></div>
-        </div>
-        <div style='margin-top:12px; padding:10px; background:{"#e8f5e9" if signal=="BUY" else "#ffebee" if signal=="SELL" else "#fff8e1"}; border-radius:8px; font-size:12px; font-weight:600; color:{color}; text-align:center;'>
-            { "🟢 BUY Panna Nalla Time Sir - Price Mela Pogum" if signal=="BUY" else "🔴 SELL Panna Nalla Time Sir - Price Keela Varum" if signal=="SELL" else "🟡 HOLD Pannunga Sir - Wait" }
-        </div>
+# AI Card with IST time
+st.markdown(f"""
+<div style='background:{"#e8f5e9" if signal=="BUY" else "#ffebee" if signal=="SELL" else "#fff8e1"}; border:1px solid {color}; border-radius:10px; padding:12px;'>
+    <div style='display:flex; justify-content:space-between;'>
+        <div><b>🤖 AI @ {cur_time_only} IST: {signal} - {score:.0f}%</b><br><span style='font-size:11px;'>Chennai Time la AI signal - Second ku second maarum</span></div>
+        <div style='font-size:20px; font-weight:800; color:{color};'>{signal}</div>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
-st.success("Graph Thelivaa irukku Sir - Crystal Clear - TradingView maathiri")
-
-if st.button("Clear & Refresh"):
+if st.button("Refresh IST Time"):
     st.cache_data.clear()
     st.rerun()
+
+st.caption(f"Correct Time: Chennai IST {cur_str} - Server may be UTC but display IST Sir - Intha time la run agura mari correct ah irukkum Sir")
