@@ -1,192 +1,459 @@
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from sklearn.linear_model import LinearRegression
+from datetime import datetime
 
-st.set_page_config(page_title="TAPINU AI PREDICT", layout="wide")
+# ================= CONFIG =================
 
-st.markdown("## 🤖 TAPINU - AI Stock Prediction - Ready")
+st.set_page_config(
+    page_title="TAPINU | TradingView",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Input
-sym_input = st.text_input("Stock Symbol", value="TCS.NS", placeholder="TCS.NS, RELIANCE.NS, ^BSESN, ^NSEI")
-symbol = sym_input.strip().upper()
-if symbol == "":
-    symbol = "TCS.NS"
+# ================= DESIGN =================
 
-c1, c2, c3, c4 = st.columns(4)
-if c1.button("TCS"): symbol = "TCS.NS"
-if c2.button("RELIANCE"): symbol = "RELIANCE.NS"
-if c3.button("SENSEX"): symbol = "^BSESN"
-if c4.button("NIFTY"): symbol = "^NSEI"
-
-# Data
-@st.cache_data(ttl=60)
-def get_data(sym):
-    t = yf.Ticker(sym)
-    d = t.history(period="1y", interval="1d")
-    intraday = t.history(period="1d", interval="5m")
-    return d, intraday
-
-daily, intraday = get_data(symbol)
-
-if len(daily) < 60:
-    st.error("Data not enough Sir")
-    st.stop()
-
-last_price = float(daily["Close"].iloc[-1])
-prev = float(daily["Close"].iloc[-2])
-change = last_price - prev
-pct = (change/prev*100) if prev != 0 else 0
-is_up = change >= 0
-color = "#26a69a" if is_up else "#ef5350"
-
-# AI PREDICTION LOGIC - Linear Regression - GitHub Style
-# Source: Kronos + intraday-predictor logic
-def ai_predict_7days(close_series):
-    # Use last 60 days to train
-    y = close_series[-60:].values
-    X = np.arange(len(y)).reshape(-1,1)
-    
-    model = LinearRegression()
-    model.fit(X, y)
-    
-    # Predict next 7 days
-    future_X = np.arange(len(y), len(y)+7).reshape(-1,1)
-    preds = model.predict(future_X)
-    
-    # Add trend + momentum
-    last_20_trend = (y[-1] - y[-20]) / 20
-    for i in range(len(preds)):
-        preds[i] = preds[i] + (last_20_trend * i * 0.3)
-    
-    return preds
-
-predicted = ai_predict_7days(daily["Close"])
-
-# Confidence
-acc = 85 + np.random.randint(-3, 3)  # Simulated accuracy from backtest
-
-# Price Card + AI Signal
-st.markdown(f"""
-<div style='background:white; border:1px solid #e0e3eb; border-radius:14px; padding:18px;'>
-    <div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;'>
-        <div>
-            <div style='font-size:12px; color:#9598a1;'>NSE • {symbol} • AI MODEL: LinearRegression + Momentum (GitHub Kronos Style)</div>
-            <div style='font-size:32px; font-weight:800; color:#131722;'>{round(last_price,2)} <span style='font-size:18px; color:{color};'>{'▲' if is_up else '▼'} {round(change,2)} ({round(pct,2)}%)</span></div>
-            <div style='font-size:13px; color:#6a6d78; margin-top:4px;'>Last: {daily.index[-1].strftime('%d-%m-%Y')} | AI Accuracy (Backtest): {acc}%</div>
-        </div>
-        <div style='text-align:center;'>
-            <div style='font-size:12px; color:#9598a1;'>AI PREDICTS TOMORROW</div>
-            <div style='font-size:26px; font-weight:800; color:#7c4dff;'>{round(float(predicted[0]),2)}</div>
-            <div style='font-size:12px; color:{color}; font-weight:700;'>{round(float(predicted[0])-last_price,2)} ({round((float(predicted[0])-last_price)/last_price*100,2)}%)</div>
-        </div>
-        <div style='background:{"#e8f5e9" if predicted[0] > last_price else "#ffebee"}; border:1px solid {color}; padding:10px 18px; border-radius:10px; text-align:center;'>
-            <div style='font-size:11px; color:#6a6d78;'>AI SIGNAL</div>
-            <div style='font-size:18px; font-weight:800; color:{color};'>{'🟢 BUY' if predicted[0] > last_price*1.005 else '🔴 SELL' if predicted[0] < last_price*0.995 else '🟡 HOLD'}</div>
-        </div>
-    </div>
-</div>
+st.markdown("""
+<style>
+.stApp {
+    background: #0b0e11;
+    color: #eaecef;
+}
+header[data-testid="stHeader"] {
+    background: #0b0e11;
+}
+.block-container {
+    padding-top: 1.2rem;
+    max-width: 1600px;
+}
+[data-testid="stSidebar"] {
+    background: #131722;
+}
+.metric-card {
+    background: #131722;
+    border: 1px solid #252a36;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 8px;
+}
+.small-label {
+    color: #848e9c;
+    font-size: 13px;
+}
+.price {
+    color: #eaecef;
+    font-size: 25px;
+    font-weight: bold;
+}
+.green {color: #0ecb81;}
+.red {color: #f6465d;}
+h1, h2, h3 {
+    color: #eaecef !important;
+}
+div[data-testid="stMetric"] {
+    background: #131722;
+    border: 1px solid #252a36;
+    padding: 12px;
+    border-radius: 10px;
+}
+.stTabs [data-baseweb="tab"] {
+    color: #d1d4dc;
+}
+</style>
 """, unsafe_allow_html=True)
 
-st.markdown("")
+# ================= SYMBOLS =================
 
-# Chart - Actual + Predicted - Beautiful
-from datetime import timedelta
-future_dates = [daily.index[-1] + timedelta(days=i) for i in range(1,8)]
+symbols = {
+    "NIFTY 50": "^NSEI",
+    "SENSEX": "^BSESN",
+    "BANK NIFTY": "^NSEBANK",
+    "TCS": "TCS.NS",
+    "RELIANCE": "RELIANCE.NS",
+    "INFOSYS": "INFY.NS",
+    "HDFC BANK": "HDFCBANK.NS",
+    "ICICI BANK": "ICICIBANK.NS",
+    "WIPRO": "WIPRO.NS",
+    "TATA MOTORS": "TMPV.NS"
+}
+
+# ================= DATA =================
+
+@st.cache_data(ttl=300)
+def get_data(symbol, period="1y"):
+    try:
+        df = yf.download(
+            symbol,
+            period=period,
+            interval="1d",
+            auto_adjust=True,
+            progress=False
+        )
+
+        if df.empty:
+            return pd.DataFrame()
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        df = df.dropna()
+
+        if "Close" not in df.columns:
+            return pd.DataFrame()
+
+        for col in ["Open", "High", "Low", "Close", "Volume"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        df = df.dropna(subset=["Close"])
+
+        df["EMA20"] = df["Close"].ewm(span=20).mean()
+        df["SMA50"] = df["Close"].rolling(50).mean()
+        df["SMA200"] = df["Close"].rolling(200).mean()
+
+        delta = df["Close"].diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / loss.replace(0, np.nan)
+
+        df["RSI"] = 100 - (100 / (1 + rs))
+        df["RSI"] = df["RSI"].fillna(50)
+
+        return df
+
+    except Exception:
+        return pd.DataFrame()
+
+
+# ================= HEADER =================
+
+st.markdown("""
+# 📈 TAPINU
+### ADVANCED INDIAN STOCK MARKET TERMINAL
+""")
+
+st.caption(
+    "Market data: Yahoo Finance | Daily data may be delayed"
+)
+
+# ================= SIDEBAR =================
+
+st.sidebar.title("📊 TAPINU MENU")
+
+selected_name = st.sidebar.selectbox(
+    "Select Market / Stock",
+    list(symbols.keys())
+)
+
+period_option = st.sidebar.selectbox(
+    "Chart Period",
+    ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
+    index=3
+)
+
+show_ema = st.sidebar.checkbox("EMA 20", True)
+show_sma50 = st.sidebar.checkbox("SMA 50", True)
+show_sma200 = st.sidebar.checkbox("SMA 200", True)
+
+st.sidebar.markdown("---")
+st.sidebar.caption("TAPINU | Market Intelligence")
+
+symbol = symbols[selected_name]
+
+# ================= LOAD DATA =================
+
+with st.spinner("Loading market data..."):
+    df = get_data(symbol, period_option)
+
+if df.empty or len(df) < 2:
+    st.error("Market data unavailable. Please try again later.")
+    st.stop()
+
+latest = float(df["Close"].iloc[-1])
+previous = float(df["Close"].iloc[-2])
+
+change = latest - previous
+change_pct = (change / previous) * 100 if previous else 0
+
+# ================= MARKET CARDS =================
+
+st.subheader("Market Overview")
+
+market_cols = st.columns(4)
+
+for i, name in enumerate(
+    ["NIFTY 50", "SENSEX", "TCS", "RELIANCE"]
+):
+    market_symbol = symbols[name]
+    market_df = get_data(market_symbol, "5d")
+
+    with market_cols[i]:
+        if not market_df.empty and len(market_df) >= 2:
+            price = float(market_df["Close"].iloc[-1])
+            old = float(market_df["Close"].iloc[-2])
+            pct = ((price - old) / old) * 100 if old else 0
+
+            st.metric(
+                name,
+                f"₹{price:,.2f}" if name not in
+                ["NIFTY 50", "SENSEX"] else f"{price:,.2f}",
+                f"{pct:+.2f}%"
+            )
+        else:
+            st.metric(name, "Unavailable", "—")
+
+st.markdown("---")
+
+# ================= STOCK DETAILS =================
+
+st.subheader(f"📈 {selected_name}")
+
+c1, c2, c3, c4 = st.columns(4)
+
+c1.metric("Current / Latest Close", f"{latest:,.2f}")
+c2.metric("Change", f"{change:+,.2f}", f"{change_pct:+.2f}%")
+
+high = float(df["High"].iloc[-1]) if "High" in df else latest
+low = float(df["Low"].iloc[-1]) if "Low" in df else latest
+
+c3.metric("Day High", f"{high:,.2f}")
+c4.metric("Day Low", f"{low:,.2f}")
+
+# ================= MAIN CHART =================
+
+st.subheader("Advanced Chart")
 
 fig = go.Figure()
 
-# Actual Line - 3 months
-recent = daily[-90:]
 fig.add_trace(go.Scatter(
-    x=recent.index,
-    y=recent["Close"],
+    x=df.index,
+    y=df["Close"],
+    name="Price",
     mode="lines",
-    line=dict(color="#131722", width=2, shape="spline", smoothing=0.8),
-    name="Actual Price",
-    hovertemplate="Actual: %{y:.2f}<extra></extra>"
+    line=dict(color="#2962ff", width=2.5)
 ))
 
-# Predicted Line - Dashed Purple
-fig.add_trace(go.Scatter(
-    x=future_dates,
-    y=predicted,
-    mode="lines+markers",
-    line=dict(color="#7c4dff", width=2.5, dash="dash", shape="spline", smoothing=0.8),
-    marker=dict(size=6, color="#7c4dff"),
-    name="AI Predicted 7 Days",
-    hovertemplate="AI Predict: %{y:.2f}<extra></extra>"
-))
+if show_ema:
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["EMA20"],
+        name="EMA 20",
+        line=dict(color="#ffb74d", width=1.5)
+    ))
 
-# Fill between last and predicted for visual
-fig.add_trace(go.Scatter(
-    x=[recent.index[-1], future_dates[0]],
-    y=[last_price, float(predicted[0])],
-    mode="lines",
-    line=dict(color="#7c4dff", width=1, dash="dot"),
-    showlegend=False
-))
+if show_sma50:
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["SMA50"],
+        name="SMA 50",
+        line=dict(color="#e040fb", width=1.5)
+    ))
+
+if show_sma200:
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["SMA200"],
+        name="SMA 200",
+        line=dict(color="#00bfa5", width=1.5)
+    ))
 
 fig.update_layout(
-    height=480,
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    margin=dict(l=10, r=70, t=20, b=30),
-    showlegend=True,
-    legend=dict(orientation="h", y=1.05, x=0.5, xanchor="center"),
-    xaxis=dict(showgrid=True, gridcolor="#f0f3fa", linecolor="#e0e3eb", tickfont=dict(size=11, color="#9598a1")),
-    yaxis=dict(showgrid=True, gridcolor="#f0f3fa", side="right", linecolor="#e0e3eb", tickfont=dict(size=11)),
+    height=520,
+    template="plotly_dark",
+    paper_bgcolor="#131722",
+    plot_bgcolor="#131722",
+    margin=dict(l=10, r=10, t=35, b=10),
     hovermode="x unified",
-    title=dict(text=f"{symbol} - Actual (Black) + AI Predicted 7 Days (Purple Dashed)", font=dict(size=13, color="#6a6d78"))
+    xaxis_title="Date",
+    yaxis_title="Price",
+    legend=dict(orientation="h", y=1.08),
+    xaxis=dict(
+        showgrid=True,
+        gridcolor="#252a36"
+    ),
+    yaxis=dict(
+        showgrid=True,
+        gridcolor="#252a36",
+        side="right"
+    )
 )
 
-st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+st.plotly_chart(fig, use_container_width=True)
 
-# AI Prediction Table
-st.markdown("### 🔮 AI Predicted Next 7 Days - Detailed")
+# ================= RSI =================
 
-pred_table = []
-for i in range(7):
-    p = float(predicted[i])
-    diff = p - last_price
-    diff_pct = (diff/last_price*100) if last_price != 0 else 0
-    pred_table.append({
-        "Day": f"Day {i+1}",
-        "Date": future_dates[i].strftime("%d-%m-%Y (%a)"),
-        "AI Predicted Price": round(p,2),
-        "Change from Today": round(diff,2),
-        "Change %": f"{round(diff_pct,2)}%",
-        "Signal": "BUY" if diff > 0 else "SELL" if diff < 0 else "HOLD"
+st.subheader("RSI Indicator")
+
+rsi_fig = go.Figure()
+
+rsi_fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["RSI"],
+    name="RSI 14",
+    line=dict(color="#ab47bc", width=2)
+))
+
+rsi_fig.add_hline(
+    y=70,
+    line_dash="dash",
+    line_color="#f6465d"
+)
+
+rsi_fig.add_hline(
+    y=30,
+    line_dash="dash",
+    line_color="#0ecb81"
+)
+
+rsi_fig.update_layout(
+    height=220,
+    template="plotly_dark",
+    paper_bgcolor="#131722",
+    plot_bgcolor="#131722",
+    margin=dict(l=10, r=10, t=20, b=10),
+    yaxis=dict(range=[0, 100])
+)
+
+st.plotly_chart(rsi_fig, use_container_width=True)
+
+# ================= MARKET ANALYSIS =================
+
+st.markdown("---")
+st.subheader("🤖 TAPINU AI Market Analysis")
+
+rsi = float(df["RSI"].iloc[-1])
+ema = float(df["EMA20"].iloc[-1])
+
+if latest > ema and rsi < 70:
+    signal = "BULLISH"
+    explanation = "Price is above EMA20 and RSI is below 70."
+elif latest < ema and rsi > 30:
+    signal = "BEARISH"
+    explanation = "Price is below EMA20 and RSI is above 30."
+else:
+    signal = "NEUTRAL"
+    explanation = "Indicators show mixed conditions."
+
+a, b, c = st.columns(3)
+
+a.metric("Trend Indicator", signal)
+b.metric("RSI Value", f"{rsi:.2f}")
+c.metric("EMA 20", f"{ema:,.2f}")
+
+st.info(explanation)
+
+st.caption(
+    "These are rule-based educational indicators, not personalized "
+    "investment advice or guaranteed BUY/SELL recommendations."
+)
+
+# ================= 7 DAY FORECAST =================
+
+st.markdown("---")
+st.subheader("🔮 7-Day Experimental AI Forecast")
+
+if len(df) >= 30:
+
+    prices = df["Close"].tail(30).values
+    x = np.arange(len(prices))
+
+    slope, intercept = np.polyfit(x, prices, 1)
+
+    future_x = np.arange(len(prices), len(prices) + 8)
+    predicted = slope * future_x + intercept
+
+    future_dates = pd.bdate_range(
+        start=df.index[-1] + pd.Timedelta(days=1),
+        periods=8
+    )
+
+    forecast_fig = go.Figure()
+
+    forecast_fig.add_trace(go.Scatter(
+        x=df.index[-30:],
+        y=prices,
+        name="Historical Price",
+        line=dict(color="#2962ff", width=2)
+    ))
+
+    forecast_fig.add_trace(go.Scatter(
+        x=future_dates,
+        y=predicted,
+        name="Experimental Projection",
+        line=dict(color="#f0b90b", width=2, dash="dash")
+    ))
+
+    forecast_fig.update_layout(
+        height=350,
+        template="plotly_dark",
+        paper_bgcolor="#131722",
+        plot_bgcolor="#131722",
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(
+        forecast_fig,
+        use_container_width=True
+    )
+
+    st.write(
+        f"Illustrative final projection: ₹{predicted[-1]:,.2f}"
+    )
+
+    st.warning(
+        "This is a simple linear-regression projection, not a reliable "
+        "prediction of future prices. Actual prices may differ significantly."
+    )
+
+else:
+    st.warning("Not enough historical data for forecasting.")
+
+# ================= MARKET DATA TABLE =================
+
+st.markdown("---")
+st.subheader("📋 Stock Market Watchlist")
+
+watchlist_data = []
+
+for name, ticker in symbols.items():
+
+    stock_df = get_data(ticker, "5d")
+
+    if stock_df.empty or len(stock_df) < 2:
+        continue
+
+    p = float(stock_df["Close"].iloc[-1])
+    old = float(stock_df["Close"].iloc[-2])
+    pct = ((p - old) / old) * 100 if old else 0
+
+    watchlist_data.append({
+        "Stock": name,
+        "Latest Close": round(p, 2),
+        "Change %": round(pct, 2),
+        "RSI": round(float(stock_df["RSI"].iloc[-1]), 2)
     })
 
-st.dataframe(pd.DataFrame(pred_table), use_container_width=True)
+if watchlist_data:
+    st.dataframe(
+        pd.DataFrame(watchlist_data),
+        use_container_width=True,
+        hide_index=True
+    )
 
-# Buy Sell Reasons - AI Logic
-st.markdown("### 🧠 AI Logic - En Yen BUY/SELL Nu")
+# ================= FOOTER =================
 
-reason_text = ""
-if predicted[0] > last_price*1.005:
-    reason_text = f"✅ Price > MA20 trend up, Momentum positive, AI model predicts {round(float(predicted[0])-last_price,2)} up tomorrow - BUY signal Sir"
-    st.success(reason_text)
-elif predicted[0] < last_price*0.995:
-    reason_text = f"🔴 Price down trend, AI predicts {round(last_price-float(predicted[0]),2)} down - SELL signal Sir - Risk irukku Sir"
-    st.error(reason_text)
-else:
-    reason_text = f"🟡 Sideways - AI predicts small change - HOLD pannunga Sir - Wait pannalam Sir"
-    st.warning(reason_text)
+st.markdown("---")
 
-# Metrics
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Today", round(last_price,2))
-c2.metric("Tomorrow AI", round(float(predicted[0]),2), f"{round(float(predicted[0])-last_price,2)}")
-c3.metric("7-Day Target", round(float(predicted[6]),2), f"{round(float(predicted[6])-last_price,2)}")
-c4.metric("Model Accuracy", f"{acc}%", "Backtest")
+st.caption(
+    "TAPINU © 2026 | Built with Streamlit + Python + Yahoo Finance"
+)
 
-if st.button("🔄 Refresh & Re-Predict"):
-    st.cache_data.clear()
-    st.rerun()
-
-st.caption("AI Model: LinearRegression + Momentum (GitHub Kronos style) - 60 Days Training - 7 Days Prediction - No TensorFlow Error - 100% Working - For Education Only - Not Financial Advice")
-st.info("Disclaimer Sir: Ithu AI Prediction mattum Sir - 100% guarantee illa Sir - Trading ku munadi research pannunga Sir - Naan kudukarathu education ku mattum Sir")
+st.caption(
+    "Educational market analysis only. Data availability and accuracy "
+    "depend on the data provider. No guaranteed returns."
+            )
+        
