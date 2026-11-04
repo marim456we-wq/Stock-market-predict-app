@@ -10,63 +10,30 @@ IST = pytz.timezone("Asia/Kolkata")
 def now_ist():
     return datetime.now(IST)
 
-# ========== MARKET OPEN/CLOSE LOGIC SIR - ITHU THAAN MAIN SIR ==========
+# --- MARKET CHECK ---
 def check_market_status():
     cur = now_ist()
     h = cur.hour
     m = cur.minute
-    weekday = cur.weekday() # 0=Mon, 6=Sun
-    
-    # Saturday Sunday Close Sir
+    weekday = cur.weekday()
     if weekday >= 5:
-        return False, f"Weekend Holiday Sir - {cur.strftime('%A')} Market Closed!"
-    
-    # NSE Holidays Sir - Add pannikalam
-    holidays = ["2026-01-26", "2026-08-15", "2026-10-02"]
-    today_str = cur.strftime("%Y-%m-%d")
-    if today_str in holidays:
-        return False, "NSE Holiday Today Sir!"
-
-    # 9:15 AM to 3:30 PM Check Sir
+        return False, f"Weekend {cur.strftime('%A')} Closed Sir"
     market_open = 9 <= h <= 15 and not (h==9 and m<15) and not (h==15 and m>30)
-    
     if market_open:
         return True, "MARKET OPEN - LIVE"
     else:
-        # Next Open Time Calculate Sir
-        next_open = cur.replace(hour=9, minute=15, second=0)
-        if h >= 16 or weekday == 4: # Friday close na Monday
-            days_ahead = 1
-            if weekday == 4: # Friday
-                days_ahead = 3
-            elif weekday == 5: # Saturday
-                days_ahead = 2
-            next_open = next_open + timedelta(days=days_ahead)
-        return False, f"MARKET CLOSED - Next Open {next_open.strftime('%d-%b %H:%M')} IST"
+        return False, f"MARKET CLOSED - Time 9:15 to 3:30 Only"
 
 is_open, status_msg = check_market_status()
 cur_ist = now_ist()
 
-# APP STOP LOGIC SIR - Market Close na Ingaye Stop Agidum Sir!
-if not is_open:
-    st.markdown(f"""
-    <div style='background:#ffebee; border:3px solid #eb5b3c; border-radius:16px; padding:40px; text-align:center; margin-top:50px;'>
-        <div style='font-size:50px;'>🔒</div>
-        <div style='font-size:32px; font-weight:800; color:#eb5b3c; margin-top:10px;'>TAPINU STOPPED</div>
-        <div style='font-size:18px; font-weight:600; color:#333; margin-top:10px;'>{status_msg}</div>
-        <div style='font-size:14px; color:#6a6d78; margin-top:20px;'>Market Time: 9:15 AM - 3:30 PM IST (Mon-Fri)</div>
-        <div style='font-size:22px; font-weight:700; color:#131722; margin-top:10px;'>Current IST: {cur_ist.strftime('%H:%M:%S %d-%b-%Y')}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    st_autorefresh = None
-    try:
-        from streamlit_autorefresh import st_autorefresh
-        st_autorefresh(interval=60000, key="closed_refresh") # 1 min ku oru vaati check pannum Sir
-    except:
-        pass
-    st.stop() # Ithu than Mukkiyam Sir - App inga nikkum Sir!
+# --- STOP LOGIC - TEST KU IP PO OFF PANNI VACHIRUKEN SIR ---
+# Neenga live la venum na indha 4 line ah UNCOMMENT pannunga Sir
+# if not is_open:
+#     st.error(f"🔒 TAPINU STOPPED - {status_msg} | Current IST {cur_ist.strftime('%H:%M:%S')}")
+#     st.stop()
 
-# ========== MARKET OPEN NA MATTUM MELA IRUKKURA CODE ODUM SIR ==========
+# --- AUTO REFRESH ---
 try:
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=1000, key="live")
@@ -77,33 +44,21 @@ st.title("TAPINU - Live Market")
 
 def fix_symbol(sym):
     sym = sym.strip().upper()
-    mapping = {
-        "NIFTY 50": "^NSEI", "NIFTY50": "^NSEI", "NIFTY": "^NSEI",
-        "NIFTY 50.NS": "^NSEI", "NIFTY50.NS": "^NSEI", "NIFTY.NS": "^NSEI",
-        "SENSEX": "^BSESN", "BSE": "^BSESN",
-        "BANK NIFTY": "^NSEBANK", "BANKNIFTY": "^NSEBANK",
-        "TCS": "TCS.NS", "NCC": "NCC.NS", "NCS": "NCC.NS",
-        "RELIANCE": "RELIANCE.NS", "INFY": "INFY.NS",
-    }
-    if sym in mapping:
-        return mapping[sym]
+    mapping = {"NIFTY 50": "^NSEI","NIFTY50": "^NSEI","NIFTY": "^NSEI","SENSEX": "^BSESN","BSE": "^BSESN","BANK NIFTY": "^NSEBANK","BANKNIFTY": "^NSEBANK","TCS": "TCS.NS","NCC": "NCC.NS","NCS": "NCC.NS","RELIANCE": "RELIANCE.NS","INFY": "INFY.NS"}
+    if sym in mapping: return mapping[sym]
     if "NIFTY" in sym: return "^NSEI"
     if "SENSEX" in sym: return "^BSESN"
     if "BANK" in sym: return "^NSEBANK"
-    if ".NS" not in sym and "^" not in sym:
-        return sym + ".NS"
+    if ".NS" not in sym and "^" not in sym: return sym + ".NS"
     return sym
 
 symbol_input = st.text_input("Enter Symbol - NIFTY, SENSEX, TCS, NCC", value="TCS.NS")
 symbol = fix_symbol(symbol_input)
-st.caption(f"Trading Symbol: {symbol} | Input: {symbol_input} | {status_msg}")
+st.caption(f"Trading Symbol: {symbol} | {status_msg}")
 
-if "base_price" not in st.session_state:
-    st.session_state["base_price"] = {}
-if "tick_history" not in st.session_state:
-    st.session_state["tick_history"] = {}
-if "tick_time" not in st.session_state:
-    st.session_state["tick_time"] = {}
+if "base_price" not in st.session_state: st.session_state["base_price"] = {}
+if "tick_history" not in st.session_state: st.session_state["tick_history"] = {}
+if "tick_time" not in st.session_state: st.session_state["tick_time"] = {}
 
 @st.cache_data(ttl=30)
 def get_base(sym):
@@ -113,13 +68,10 @@ def get_base(sym):
         df = t.history(period="1d", interval="1m")
         if len(df) > 0:
             price = float(df["Close"].iloc[-1])
-            if price > 5:
-                return price
+            if price > 5: return price
         df = t.history(period="5d", interval="1d")
-        if len(df) > 0:
-            return float(df["Close"].iloc[-1])
-    except:
-        pass
+        if len(df) > 0: return float(df["Close"].iloc[-1])
+    except: pass
     if "^NSEI" in sym: return 23053.10
     if "^BSESN" in sym: return 74459.53
     if "^NSEBANK" in sym: return 55000.0
@@ -163,9 +115,7 @@ change = tick - hist[0]
 pct = change / hist[0] * 100 if hist[0]!=0 else 0
 up = change >= 0
 color = "#00a25b" if up else "#eb5b3c"
-scolor = "#00a25b"
-
-# ... Rest of your chart code same Sir - No change ...
+scolor = "#00a25b" if is_open else "#eb5b3c"
 
 st.markdown(f"""
 <div style='background:white; border:2px solid {scolor}; border-radius:12px; padding:14px;'>
@@ -179,15 +129,13 @@ st.markdown(f"""
             <div style='font-size:10px; color:#6a6d78;'>IST TIME</div>
             <div style='font-size:22px; font-weight:800; color:#131722;'>{cur_ist.strftime('%H:%M:%S')}</div>
             <div style='font-size:11px; color:#6a6d78;'>{cur_ist.strftime('%d-%b-%Y')}</div>
-            <div style='font-size:10px; color:{scolor}; font-weight:700; margin-top:4px;'>{status_msg}</div>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 def ai_signal(prices):
-    if len(prices) < 20:
-        return "HOLD", 50
+    if len(prices) < 20: return "HOLD", 50
     arr = np.array(prices)
     sma20 = np.mean(arr[-20:])
     deltas = np.diff(arr)
@@ -212,5 +160,49 @@ fig = go.Figure()
 fig.add_trace(go.Scatter(x=tt, y=hist, mode="lines", line=dict(color=color, width=3, shape="spline", smoothing=0.7), fill="tozeroy", fillcolor="rgba(0,162,91,0.08)" if up else "rgba(235,91,60,0.08)", name="LTP"))
 fig.add_trace(go.Scatter(x=tt, y=[sma20_val]*len(tt), mode="lines", line=dict(color="#2962FF", width=1.5, dash="dot"), name=f"SMA20 {sma20_val:,.2f}"))
 fig.add_trace(go.Scatter(x=[tt[-1]], y=[tick], mode="markers+text", marker=dict(size=12, color=color, line=dict(width=2, color="white")), text=[f" Rs {tick:,.2f}"], textposition="middle right", textfont=dict(size=12, color=color), name="NOW"))
-fig.update_layout(height=520, plot_bgcolor="#ffffff", paper_bgcolor="#ffffff", font=dict(family="Inter", size=12, color="#131722"), margin=dict(l=10, r=80, t=20, b=40), showlegend=True, legend=dict(orientation="h", y=1.02, xanchor="right", x=1), xaxis=dict(showgrid=True, gridcolor="#f0f3fa", tickformat="%H:%M:%S"), yaxis=dict(showgrid=True, gridcolor="#f0f3fa", side="right", range=[y_min, y_max], title=f"{symbol} Rs", tickformat=",.2f"), hovermode="x unified")
+fig.update_layout(height=520, plot_bgcolor="#ffffff", paper_bgcolor="#ffffff", margin=dict(l=10, r=80, t=20, b=40), showlegend=True, legend=dict(orientation="h", y=1.02, xanchor="right", x=1), xaxis=dict(showgrid=True, gridcolor="#f0f3fa", tickformat="%H:%M:%S"), yaxis=dict(showgrid=True, gridcolor="#f0f3fa", side="right", range=[y_min, y_max], title=f"{symbol} Rs", tickformat=",.2f"), hovermode="x unified")
 st.plotly_chart(fig, use_container_width=True)
+
+col1, col2 = st.columns(2)
+with col1:
+    rsi_vals = []
+    for i in range(14, len(hist)):
+        sub = hist[i-14:i]
+        deltas = np.diff(sub)
+        gains = np.where(np.array(deltas)>0, deltas, 0)
+        losses = np.where(np.array(deltas)<0, -np.array(deltas), 0)
+        avg_g = np.mean(gains) if len(gains)>0 else 0.1
+        avg_l = np.mean(losses) if len(losses)>0 else 0.1
+        rsi = 100 - (100/(1+ avg_g/(avg_l+0.0001)))
+        rsi_vals.append(rsi)
+    fig_rsi = go.Figure()
+    fig_rsi.add_trace(go.Scatter(x=tt[14:], y=rsi_vals, mode="lines", line=dict(color="#7c4dff", width=2.5), fill="tozeroy", fillcolor="rgba(124,77,255,0.1)", name="RSI"))
+    fig_rsi.add_hline(y=70, line_dash="dash", line_color="#eb5b3c")
+    fig_rsi.add_hline(y=30, line_dash="dash", line_color="#00a25b")
+    fig_rsi.update_layout(height=240, plot_bgcolor="white", paper_bgcolor="white", margin=dict(l=10,r=40,t=10,b=20), xaxis=dict(tickformat="%H:%M:%S"), yaxis=dict(range=[0,100], title="RSI"), showlegend=False)
+    st.plotly_chart(fig_rsi, use_container_width=True)
+
+with col2:
+    bg = "#e8f5e9" if signal=="BUY" else "#ffebee" if signal=="SELL" else "#fff8e1"
+    st.markdown(f"""
+    <div style='background:white; border:1px solid #e0e3eb; border-radius:12px; padding:16px;'>
+        <div style='font-size:11px; color:#6a6d78;'>AI ANALYSIS @ {cur_ist.strftime('%H:%M:%S')} IST • {symbol}</div>
+        <div style='font-size:20px; font-weight:700; margin-top:8px; color:{color};'>{signal} - {score:.0f}%</div>
+        <div style='margin-top:12px; font-size:13px;'>
+            <div style='display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f5f5f5;'><span>LTP</span><b>Rs {tick:,.2f}</b></div>
+            <div style='display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f5f5f5;'><span>SMA20</span><b>Rs {sma20_val:,.2f}</b></div>
+            <div style='display:flex; justify-content:space-between; padding:6px 0;'><span>Change</span><b style='color:{color};'>{change:+.2f} ({pct:+.2f}%)</b></div>
+        </div>
+        <div style='margin-top:12px; padding:10px; background:{bg}; border-radius:8px; font-size:12px; font-weight:600; color:{color}; text-align:center;'>
+            {signal} • {symbol} • {score:.0f}% Confidence
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.success(f"Live - {symbol_input.upper()} = Rs {tick:,.2f} • IST {cur_ist.strftime('%H:%M:%S')}")
+
+if st.button("Clear & Refresh"):
+    st.cache_data.clear()
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
+    st.rerun()
